@@ -30,8 +30,10 @@ connectDatabase();
 const app = express();
 
 const allowedOrigins = [
-  "http://localhost:5173",
+  "http://localhost:5173",  // customer dev
+  "http://localhost:5174",  // admin dev
   process.env.FRONTEND_URL,
+  process.env.ADMIN_URL,
 ].filter(Boolean);
 
 app.use(
@@ -78,6 +80,7 @@ app.use("/api/v1/promotions", require("./routes/promotion.routes"));
 app.use("/api/v1/reviews", require("./routes/admin.review.routes"));
 app.use("/api/v1/announcements", require("./routes/announcement.routes"));
 app.use("/api/v1/chats", require("./routes/chat.routes"));
+app.use("/api/v1/documents", require("./routes/document.routes"));
 app.use("/api/v1/blogs", require("./routes/blog.routes"));
 app.use("/api/v1/contacts", require("./routes/contact.routes"));
 app.use("/api/v1/analytics", require("./routes/analytics.routes"));
@@ -139,6 +142,7 @@ const startServer = async () => {
         console.error("✗ Initial RSS feed fetch failed:", error.message);
       }
     }, 30000);
+
 
     global.notificationGateway = notificationGateway;
     global.notificationEventEmitter = notificationEventEmitter;

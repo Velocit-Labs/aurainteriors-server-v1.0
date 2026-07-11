@@ -1,6 +1,6 @@
 const Joi = require("joi");
 
-const validStatuses = ["waiting", "active", "resolved", "closed"];
+const validStatuses = ["ai_handling", "escalated", "agent_handling", "resolved", "closed"];
 const validPriorities = ["low", "normal", "high", "urgent"];
 
 exports.startChatSchema = Joi.object({
@@ -33,6 +33,7 @@ exports.sendMessageSchema = Joi.object({
     .messages({
       "array.max": "Maximum of 3 attachments allowed per message",
     }),
+  isInternalNote: Joi.boolean().optional().default(false),
 });
 
 exports.updateTypingSchema = Joi.object({

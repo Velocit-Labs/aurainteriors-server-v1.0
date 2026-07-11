@@ -11,17 +11,31 @@ const chatMessageSchema = new mongoose.Schema(
     sender: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "Message must have a sender"],
+      required: [
+        function () {
+          return this.senderRole !== "system";
+        },
+        "Message must have a sender unless it is a system message",
+      ],
     },
     senderRole: {
       type: String,
-      enum: ["customer", "admin"],
+      enum: ["customer", "admin", "bot", "system"],
       required: [true, "Sender role is required"],
     },
     messageType: {
       type: String,
       enum: ["text", "image", "file", "system"],
       default: "text",
+    },
+    // FIX 8: Distinguish AI-generated messages from human admin messages
+    isAiGenerated: {
+      type: Boolean,
+      default: false,
+    },
+    isInternalNote: {
+      type: Boolean,
+      default: false,
     },
     content: {
       type: String,
@@ -144,7 +158,9 @@ chatMessageSchema.statics.getChatMessages = async function (
 };
 
 chatMessageSchema.statics.markAsRead = async function (chatId, senderRole) {
-  const oppositeRole = senderRole === "customer" ? "admin" : "customer";
+  // FIX 8: When a customer reads, mark both 'admin' and 'bot' messages as read
+  const oppositeRole =
+    senderRole === "customer" ? { $in: ["admin", "bot"] } : "customer";
 
   const result = await this.updateMany(
     {
@@ -165,7 +181,9 @@ chatMessageSchema.statics.markAsRead = async function (chatId, senderRole) {
 };
 
 chatMessageSchema.statics.getUnreadCount = async function (chatId, senderRole) {
-  const oppositeRole = senderRole === "customer" ? "admin" : "customer";
+  // FIX 8: Count unread 'bot' messages the same as 'admin' from customer's perspective
+  const oppositeRole =
+    senderRole === "customer" ? { $in: ["admin", "bot"] } : "customer";
 
   return this.countDocuments({
     chat: chatId,

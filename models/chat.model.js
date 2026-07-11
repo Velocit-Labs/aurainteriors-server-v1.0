@@ -10,8 +10,8 @@ const chatSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["waiting", "active", "resolved", "closed"],
-      default: "waiting",
+      enum: ["ai_handling", "escalated", "agent_handling", "resolved", "closed"],
+      default: "ai_handling",
       index: true,
     },
     subject: {
@@ -39,6 +39,14 @@ const chatSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    lastReadCustomerAt: {
+      type: Date,
+      default: Date.now,
+    },
+    lastReadAdminAt: {
+      type: Date,
+      default: Date.now,
+    },
     customerTyping: {
       type: Boolean,
       default: false,
@@ -51,7 +59,22 @@ const chatSchema = new mongoose.Schema(
       userAgent: String,
       ipAddress: String,
       referrer: String,
+      sentiment: String,
+      confidence: Number,
     },
+    adminNotes: [
+      {
+        author: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        content: String,
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      }
+    ],
     closedAt: {
       type: Date,
       default: null,
@@ -78,7 +101,7 @@ chatSchema.index({ lastMessageAt: -1 });
 chatSchema.index({ status: 1, lastMessageAt: -1 });
 
 chatSchema.virtual("isActive").get(function () {
-  return this.status === "active" || this.status === "waiting";
+  return ["ai_handling", "escalated", "agent_handling"].includes(this.status);
 });
 
 chatSchema.virtual("messages", {
@@ -178,7 +201,7 @@ chatSchema.statics.getAllChats = async function (options = {}) {
 
 chatSchema.statics.getWaitingQueue = async function () {
   return this.find({
-    status: "waiting",
+    status: "escalated",
     deletedAt: null,
   })
     .sort({ createdAt: 1 })

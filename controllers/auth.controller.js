@@ -41,6 +41,13 @@ exports.sendMagicLink = async (req, res) => {
 
     let user = await User.findOne({ email, deletedAt: null });
 
+    if (user && user.role === "admin") {
+      return res.status(403).json({
+        status: "fail",
+        message: "Admins must log in through the Admin Portal.",
+      });
+    }
+
     if (user && !user.isActive) {
       return res.status(403).json({
         status: "fail",
@@ -49,7 +56,6 @@ exports.sendMagicLink = async (req, res) => {
     }
 
     if (!user) {
-      // Auto-provision account on first login
       user = new User({ email });
     }
 
@@ -62,6 +68,7 @@ exports.sendMagicLink = async (req, res) => {
     });
 
     const magicLink = `${process.env.FRONTEND_URL}/auth/verify?token=${rawToken}`;
+    console.log(magicLink);
     sendMagicLinkEmail(email, magicLink).catch((err) =>
       console.error(`[email] Magic link failed for ${email}: ${err.message}`),
     );
@@ -95,6 +102,13 @@ exports.verifyMagicLink = async (req, res) => {
       });
     }
 
+    if (user.role === "admin") {
+      return res.status(403).json({
+        status: "fail",
+        message: "Admins must log in through the Admin Portal.",
+      });
+    }
+
     user.isEmailVerified = true;
     user.magicLinkToken = undefined;
     user.magicLinkExpires = undefined;
@@ -108,6 +122,9 @@ exports.verifyMagicLink = async (req, res) => {
 };
 
 exports.googleCallback = (req, res) => {
+  if (req.user && req.user.role === "admin") {
+    return res.redirect(`${process.env.FRONTEND_URL}/?error=unauthorized_admin`);
+  }
   const token = signToken(req.user);
   attachTokenCookie(res, token);
   res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}`);
@@ -130,4 +147,100 @@ exports.logout = (_req, res) => {
   res
     .status(200)
     .json({ status: "success", message: "Logged out successfully" });
+};
+
+exports.adminLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ status: "fail", message: "Email and password are required" });
+    }
+
+    const user = await User.findOne({ email, deletedAt: null }).select("+password +role +isActive");
+
+    if (!user || user.role !== "admin") {
+      return res
+        .status(401)
+        .json({ status: "fail", message: "Invalid email or password" });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        status: "fail",
+        message: "This account has been deactivated. Please contact support.",
+      });
+    }
+
+    const isCorrect = await user.comparePassword(password, user.password);
+    if (!isCorrect) {
+      return res
+        .status(401)
+        .json({ status: "fail", message: "Invalid email or password" });
+    }
+
+    // Generate OTP
+    const rawOtp = user.createOtp();
+    await user.save({ validateBeforeSave: false });
+
+    // Send email
+    const { sendOtpEmail } = require("../services/email.service");
+    res.status(200).json({
+      status: "success",
+      otpRequired: true,
+      message: "A verification code has been sent to your email.",
+    });
+
+    sendOtpEmail(email, rawOtp).catch((err) =>
+      console.error(`[email] Admin OTP failed for ${email}: ${err.message}`),
+    );
+  } catch (error) {
+    res.status(500).json({ status: "error", message: error.message });
+  }
+};
+
+exports.adminVerifyOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res
+        .status(400)
+        .json({ status: "fail", message: "Email and verification code are required" });
+    }
+
+    const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+
+    const user = await User.findOne({
+      email,
+      loginOtp: hashedOtp,
+      loginOtpExpires: { $gt: Date.now() },
+      deletedAt: null,
+    }).select("+loginOtp +loginOtpExpires");
+
+    if (!user) {
+      return res.status(400).json({
+        status: "fail",
+        message: "The code is invalid or has expired. Please try again.",
+      });
+    }
+
+    if (user.role !== "admin") {
+      return res.status(403).json({
+        status: "fail",
+        message: "You do not have permission to perform this action.",
+      });
+    }
+
+    // Clear OTP fields
+    user.loginOtp = undefined;
+    user.loginOtpExpires = undefined;
+    user.isEmailVerified = true;
+    user.updateLoginActivity();
+    await user.save({ validateBeforeSave: false });
+
+    sendAuthResponse(user, 200, res);
+  } catch (error) {
+    res.status(500).json({ status: "error", message: error.message });
+  }
 };

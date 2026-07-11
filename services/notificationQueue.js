@@ -40,6 +40,9 @@ const notificationQueues = {
   scheduledPromotion: new Queue("scheduled-promotion", redisConfig, {
     defaultJobOptions,
   }),
+  documentIngestion: new Queue("document-ingestion", redisConfig, {
+    defaultJobOptions,
+  }),
 };
 
 function configureQueues() {
@@ -94,6 +97,18 @@ notificationQueues.scheduledPromotion.process(async (job) => {
     };
   } catch (error) {
     throw new Error(`Scheduled promotion processing failed: ${error.message}`);
+  }
+});
+
+notificationQueues.documentIngestion.process(async (job) => {
+  const { documentId } = job.data;
+  try {
+    console.log(`[INGESTION] Processing background ingestion job for document ID: ${documentId}`);
+    const IngestionService = require("./ingestionService");
+    const result = await IngestionService.ingestDocument(documentId);
+    return result;
+  } catch (error) {
+    throw new Error(`Document ingestion failed: ${error.message}`);
   }
 });
 
@@ -222,9 +237,45 @@ async function closeQueues() {
   }
 }
 
+async function queueDocumentIngestion(documentId) {
+  try {
+    const addPromise = notificationQueues.documentIngestion.add(
+      { documentId },
+      {
+        priority: 2,
+        delay: 0,
+        jobId: `ingestion-${documentId}-${Date.now()}`,
+      }
+    );
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Redis queue connection timeout")), 1500)
+    );
+
+    const queuedJob = await Promise.race([addPromise, timeoutPromise]);
+    console.log(`Document ingestion job queued: ${queuedJob.id}`);
+    return queuedJob;
+  } catch (error) {
+    console.warn(`[INGESTION] Redis queue is unavailable (${error.message}). Processing document ${documentId} in-memory instead.`);
+    
+    // Run ingestion asynchronously in the background so we don't block the response
+    (async () => {
+      try {
+        const IngestionService = require("./ingestionService");
+        await IngestionService.ingestDocument(documentId);
+      } catch (ingestError) {
+        console.error("[INGESTION] In-memory background processing failed:", ingestError.message);
+      }
+    })();
+
+    return { id: "in-memory-fallback" };
+  }
+}
+
 module.exports = {
   initializeQueues,
   closeQueues,
   queueEmailNotification,
+  queueDocumentIngestion,
   notificationQueues,
 };

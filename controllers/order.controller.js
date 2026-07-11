@@ -7,8 +7,7 @@ const Discount = require("../models/discount.model");
 const Address = require("../models/address.model");
 const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/AppError");
-const sendEmail = require("../utils/sendEmail");
-const { generateOrderConfirmationEmail } = require("../utils/emailTemplate");
+const { sendOrderConfirmationEmail: sendOrderConfirmationEmailService } = require("../services/email.service");
 const notificationEventEmitter = require("../services/notificationEventEmitter");
 
 const ESEWA_CONFIG = {
@@ -117,12 +116,7 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
 // Helper function to send order confirmation email
 const sendOrderConfirmationEmail = async (order) => {
   try {
-    const emailHtml = generateOrderConfirmationEmail(order);
-    await sendEmail(
-      order.guestInfo.email,
-      `Order Confirmed - #${order.orderId} | DecorX`,
-      emailHtml,
-    );
+    await sendOrderConfirmationEmailService(order);
     return true;
   } catch (error) {
     console.error("Failed to send order confirmation email:", error.message);
@@ -185,11 +179,31 @@ const emitOrderNotifications = (order) => {
   }
 };
 
+// Helper to start sessions conditionally based on whether replica sets are supported
+const startTransactionSession = async () => {
+  const topologyType = mongoose.connection.client?.topology?.description?.type;
+  // If connection is not replica set, sessions are not supported (e.g. standalone local mongo)
+  const supportsTransactions = topologyType && topologyType !== 'Single';
+
+  if (!supportsTransactions) {
+    return {
+      session: null,
+      commitTransaction: async () => {},
+      abortTransaction: async () => {},
+      endSession: () => {},
+    };
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  return session;
+};
+
 // ========== GUEST CHECKOUT ==========
 
 exports.guestCheckout = catchAsync(async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const transaction = await startTransactionSession();
+  const { session } = transaction;
 
   try {
     const {
@@ -239,36 +253,45 @@ exports.guestCheckout = catchAsync(async (req, res, next) => {
           statusHistory: [{ status: "pending", note: "Order placed" }],
         },
       ],
-      { session },
+      session ? { session } : {},
     );
 
-    // Update product stock within transaction
-    for (const item of orderItems) {
-      await Product.findByIdAndUpdate(
-        item.product,
-        {
-          $inc: { stock: -item.quantity },
-        },
-        { session },
-      );
+    // Update product stock within transaction (only for non-eSewa orders like COD)
+    if (paymentMethod !== "esewa") {
+      for (const item of orderItems) {
+        const updatedProduct = await Product.findOneAndUpdate(
+          {
+            _id: item.product,
+            stock: { $gte: item.quantity },
+          },
+          {
+            $inc: { stock: -item.quantity },
+          },
+          session ? { session, new: true } : { new: true },
+        );
+
+        if (!updatedProduct) {
+          throw new AppError("Insufficient stock for product in your cart. Please review.", 400);
+        }
+      }
     }
 
     // Increment discount usage if applied within transaction
     if (totals.discountInfo) {
-      const discount = await Discount.findOne({
-        code: totals.discountInfo.code,
-      }).session(session);
+      const discount = session
+        ? await Discount.findOne({ code: totals.discountInfo.code }).session(session)
+        : await Discount.findOne({ code: totals.discountInfo.code });
       if (discount) {
         discount.currentUsageCount += 1;
-        await discount.save({ session });
+        await discount.save(session ? { session } : {});
       }
     }
 
     // Handle eSewa redirection setup
     if (paymentMethod === "esewa") {
       const esewaData = generateEsewaPaymentData(order);
-      await session.commitTransaction();
-      session.endSession();
+      await transaction.commitTransaction();
+      transaction.endSession();
 
       return res.status(201).json({
         success: true,
@@ -287,10 +310,10 @@ exports.guestCheckout = catchAsync(async (req, res, next) => {
     order.orderStatus = "confirmed";
     order.confirmedAt = new Date();
     order.addStatusHistory("confirmed", "Cash on Delivery order confirmed");
-    await order.save({ session });
+    await order.save(session ? { session } : {});
 
-    await session.commitTransaction();
-    session.endSession();
+    await transaction.commitTransaction();
+    transaction.endSession();
 
     // After success: Send order confirmation email and notifications
     sendOrderConfirmationEmail(order).catch((err) =>
@@ -316,8 +339,8 @@ exports.guestCheckout = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
+    await transaction.abortTransaction();
+    transaction.endSession();
     return next(error);
   }
 });
@@ -325,8 +348,8 @@ exports.guestCheckout = catchAsync(async (req, res, next) => {
 // ========== AUTHENTICATED CHECKOUT ==========
 
 exports.authenticatedCheckout = catchAsync(async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const transaction = await startTransactionSession();
+  const { session } = transaction;
 
   try {
     const userId = req.user._id;
@@ -342,12 +365,12 @@ exports.authenticatedCheckout = catchAsync(async (req, res, next) => {
     } = req.body;
 
     // Get user's cart within transaction
-    const cart = await Cart.findOne({ user: userId })
-      .populate("items.product")
-      .session(session);
+    const cartQuery = Cart.findOne({ user: userId }).populate("items.product");
+    const cart = session ? await cartQuery.session(session) : await cartQuery;
+    
     if (!cart || cart.items.length === 0) {
-      await session.abortTransaction();
-      session.endSession();
+      await transaction.abortTransaction();
+      transaction.endSession();
       return next(new AppError("Your cart is empty", 400));
     }
 
@@ -363,13 +386,15 @@ exports.authenticatedCheckout = catchAsync(async (req, res, next) => {
     // Get shipping address
     let finalShippingAddress;
     if (shippingAddressId) {
-      const savedAddress = await Address.findOne({
+      const addressQuery = Address.findOne({
         _id: shippingAddressId,
         user: userId,
-      }).session(session);
+      });
+      const savedAddress = session ? await addressQuery.session(session) : await addressQuery;
+      
       if (!savedAddress) {
-        await session.abortTransaction();
-        session.endSession();
+        await transaction.abortTransaction();
+        transaction.endSession();
         return next(new AppError("Shipping address not found", 404));
       }
       finalShippingAddress = {
@@ -390,10 +415,12 @@ exports.authenticatedCheckout = catchAsync(async (req, res, next) => {
     let finalBillingAddress = finalShippingAddress;
     if (!useSameAddress) {
       if (billingAddressId) {
-        const savedBilling = await Address.findOne({
+        const billingQuery = Address.findOne({
           _id: billingAddressId,
           user: userId,
-        }).session(session);
+        });
+        const savedBilling = session ? await billingQuery.session(session) : await billingQuery;
+        
         if (savedBilling) {
           finalBillingAddress = {
             fullName: savedBilling.fullName,
@@ -442,39 +469,50 @@ exports.authenticatedCheckout = catchAsync(async (req, res, next) => {
           statusHistory: [{ status: "pending", note: "Order placed" }],
         },
       ],
-      { session },
+      session ? { session } : {},
     );
 
-    // Update stock within transaction
-    for (const item of orderItems) {
-      await Product.findByIdAndUpdate(
-        item.product,
-        {
-          $inc: { stock: -item.quantity },
-        },
-        { session },
-      );
+    // Update stock within transaction (only for non-eSewa orders like COD)
+    if (paymentMethod !== "esewa") {
+      for (const item of orderItems) {
+        const updatedProduct = await Product.findOneAndUpdate(
+          {
+            _id: item.product,
+            stock: { $gte: item.quantity },
+          },
+          {
+            $inc: { stock: -item.quantity },
+          },
+          session ? { session, new: true } : { new: true },
+        );
+
+        if (!updatedProduct) {
+          throw new AppError("Insufficient stock for product in your cart. Please review.", 400);
+        }
+      }
     }
 
     // Increment discount usage within transaction
     if (totals.discountInfo) {
-      const discount = await Discount.findOne({
-        code: totals.discountInfo.code,
-      }).session(session);
+      const discount = session
+        ? await Discount.findOne({ code: totals.discountInfo.code }).session(session)
+        : await Discount.findOne({ code: totals.discountInfo.code });
       if (discount) {
         discount.currentUsageCount += 1;
-        await discount.save({ session });
+        await discount.save(session ? { session } : {});
       }
     }
 
-    // Clear user's cart within transaction
-    await cart.clearCart(); // Inside atomic transaction
+    // Clear user's cart within transaction (only for non-eSewa orders like COD)
+    if (paymentMethod !== "esewa") {
+      await cart.clearCart(session ? { session } : {});
+    }
 
     // Handle payment
     if (paymentMethod === "esewa") {
       const esewaData = generateEsewaPaymentData(order);
-      await session.commitTransaction();
-      session.endSession();
+      await transaction.commitTransaction();
+      transaction.endSession();
 
       return res.status(201).json({
         success: true,
@@ -490,10 +528,10 @@ exports.authenticatedCheckout = catchAsync(async (req, res, next) => {
     order.orderStatus = "confirmed";
     order.confirmedAt = new Date();
     order.addStatusHistory("confirmed", "Cash on Delivery order confirmed");
-    await order.save({ session });
+    await order.save(session ? { session } : {});
 
-    await session.commitTransaction();
-    session.endSession();
+    await transaction.commitTransaction();
+    transaction.endSession();
 
     // After success: Send order confirmation email and notifications
     sendOrderConfirmationEmail(order).catch((err) =>
@@ -519,8 +557,8 @@ exports.authenticatedCheckout = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
+    await transaction.abortTransaction();
+    transaction.endSession();
     return next(error);
   }
 });
@@ -555,7 +593,13 @@ exports.trackOrder = catchAsync(async (req, res, next) => {
 exports.getMyOrders = catchAsync(async (req, res, next) => {
   const { page = 1, limit = 10, status } = req.query;
 
-  const filter = { user: req.user._id };
+  const filter = {
+    user: req.user._id,
+    $or: [
+      { paymentMethod: "cod" },
+      { paymentMethod: "esewa", paymentStatus: { $ne: "pending" } },
+    ],
+  };
   if (status) filter.orderStatus = status;
 
   const skip = (page - 1) * limit;
@@ -842,6 +886,37 @@ exports.esewaSuccess = catchAsync(async (req, res, next) => {
   }
 
   // Update order with successful payment
+  // ATOMIC STOCK DEDUCTION (Deferred model: Stock is only decremented now that payment succeeded)
+  try {
+    for (const item of order.items) {
+      const updatedProduct = await Product.findOneAndUpdate(
+        {
+          _id: item.product,
+          stock: { $gte: item.quantity },
+        },
+        {
+          $inc: { stock: -item.quantity },
+        },
+        { new: true },
+      );
+
+      if (!updatedProduct) {
+        order.paymentStatus = "failed";
+        order.orderStatus = "cancelled";
+        order.addStatusHistory("cancelled", "Order failed: Out of stock during eSewa payment capture");
+        await order.save();
+        return res.redirect(
+          `${FRONTEND_URL}/checkout/payment-failed?error=out_of_stock`,
+        );
+      }
+    }
+  } catch (err) {
+    console.error("Stock deduction failure during eSewa checkout confirmation:", err.message);
+    return res.redirect(
+      `${FRONTEND_URL}/checkout/payment-failed?error=internal_stock_error`,
+    );
+  }
+
   order.paymentStatus = "paid";
   order.paymentDetails = {
     transactionId: transaction_code,
@@ -853,6 +928,19 @@ exports.esewaSuccess = catchAsync(async (req, res, next) => {
   order.confirmedAt = new Date();
   order.addStatusHistory("confirmed", "Payment confirmed via eSewa");
   await order.save();
+
+  // Clear user's cart now that the payment was successfully captured
+  if (order.user) {
+    try {
+      const cart = await Cart.findOne({ user: order.user });
+      if (cart) {
+        await cart.clearCart();
+        console.log(`[eSewa Success] Cleared cart for user ID: ${order.user}`);
+      }
+    } catch (cartErr) {
+      console.error(`[eSewa Success] Failed to clear cart for user ID ${order.user}:`, cartErr.message);
+    }
+  }
 
   // Send order confirmation email in background
   sendOrderConfirmationEmail(order).catch((err) =>
@@ -892,13 +980,6 @@ exports.esewaFailure = catchAsync(async (req, res, next) => {
       order.orderStatus = "cancelled"; // Mark order as cancelled
       order.addStatusHistory("cancelled", "Payment failed/cancelled via eSewa");
       await order.save();
-
-      // Restore stock
-      for (const item of order.items) {
-        await Product.findByIdAndUpdate(item.product, {
-          $inc: { stock: item.quantity },
-        });
-      }
     }
   }
 

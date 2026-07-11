@@ -8,6 +8,10 @@ const { protect } = require("../middleware/auth.middleware");
 router.post("/send-magic-link", authController.sendMagicLink);
 router.post("/verify-magic-link", authController.verifyMagicLink);
 
+// Admin Email + Password + OTP Authentication
+router.post("/admin/login", authController.adminLogin);
+router.post("/admin/verify-otp", authController.adminVerifyOtp);
+
 router.get("/me", protect, authController.getMe);
 router.post("/logout", authController.logout);
 
