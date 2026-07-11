@@ -324,3 +324,64 @@ exports.processChatAttachment = async (req, res, next) => {
     next(new AppError("Error processing attachments. Please try again.", 500));
   }
 };
+
+const documentFilter = (req, file, cb) => {
+  const allowedDocTypes = [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "text/csv",
+  ];
+
+  if (allowedDocTypes.includes(file.mimetype) || file.originalname.endsWith(".csv") || file.originalname.endsWith(".txt")) {
+    cb(null, true);
+  } else {
+    cb(
+      new AppError(
+        "Only PDF, DOCX, TXT, and CSV documents are allowed",
+        400
+      ),
+      false
+    );
+  }
+};
+
+const documentUpload = multer({
+  storage: multerStorage,
+  fileFilter: documentFilter,
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
+
+exports.uploadDocumentFile = documentUpload.single("file");
+
+exports.processDocumentFile = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return next(new AppError("Please upload a file", 400));
+    }
+
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const cleanExt = ext.replace(".", "");
+    const publicId = `${generatePublicId("doc")}.${cleanExt}`;
+
+    const result = await uploadToCloudinary(req.file.buffer, {
+      folder: "aura/knowledge_base",
+      public_id: publicId,
+      resource_type: "raw",
+      type: "authenticated",
+    });
+
+    req.processedDocument = {
+      fileName: req.file.originalname,
+      fileUrl: result.secure_url,
+      cloudinaryPublicId: result.public_id,
+      fileType: cleanExt === "docx" ? "docx" : cleanExt === "pdf" ? "pdf" : cleanExt === "csv" ? "csv" : "txt",
+    };
+
+    next();
+  } catch (error) {
+    console.error("Error processing document:", error);
+    next(new AppError("Error uploading document to Cloudinary", 500));
+  }
+};
+

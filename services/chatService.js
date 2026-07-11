@@ -6,13 +6,16 @@ const User = require("../models/user.model");
 
 class ChatService {
   async createChat(customerId, data = {}) {
-    const { subject, metadata } = data;
+        const { subject, metadata } = data;
 
     const chat = await Chat.create({
       customer: customerId,
       subject,
-      metadata,
-      status: "waiting",
+      metadata: {
+        ...(metadata || {}),
+        botActive: true,
+      },
+      status: "ai_handling",
     });
 
     const populatedChat = await chat.populate("customer", "firstName lastName email");
@@ -29,16 +32,16 @@ class ChatService {
       console.error("Failed to emit admin:chat:started event:", error.message);
     }
 
-    // Auto-create Welcome Message from Admin/System
+    // Auto-create Welcome Message from AI bot
     try {
-      const adminSelector = { role: 'admin' };
-      const admin = await User.findOne(adminSelector).select('_id');
+      const admin = await User.findOne({ role: 'admin' }).select('_id');
 
       if (admin) {
         await ChatMessage.create({
           chat: chat._id,
           sender: admin._id,
-          senderRole: 'admin',
+          senderRole: 'bot',          // FIX 8: tagged as bot, not human admin
+          isAiGenerated: true,
           messageType: 'text',
           content: 'Hello! Welcome to Aura Interiors. How can I help you find the perfect piece for your home?',
           deliveredAt: new Date(),
@@ -58,6 +61,30 @@ class ChatService {
     return populatedChat;
   }
 
+  async enrichChatWithUnreadCounts(chatJson) {
+    if (!chatJson) return chatJson;
+
+    const customerUnread = await ChatMessage.countDocuments({
+      chat: chatJson._id,
+      senderRole: { $in: ["admin", "bot"] },
+      createdAt: { $gt: chatJson.lastReadCustomerAt || new Date(0) },
+      deletedAt: null,
+    });
+
+    const adminUnread = await ChatMessage.countDocuments({
+      chat: chatJson._id,
+      senderRole: "customer",
+      createdAt: { $gt: chatJson.lastReadAdminAt || new Date(0) },
+      deletedAt: null,
+    });
+
+    return {
+      ...chatJson,
+      unreadCountCustomer: customerUnread,
+      unreadCountAdmin: adminUnread,
+    };
+  }
+
   async getChatById(chatId, userId, userRole) {
     const chat = await Chat.findOne({
       _id: chatId,
@@ -72,23 +99,33 @@ class ChatService {
       throw new AppError("You are not authorized to view this chat", 403);
     }
 
-    return chat;
+    const chatJson = chat.toJSON();
+    return this.enrichChatWithUnreadCounts(chatJson);
   }
 
   async getCustomerChats(customerId, options = {}) {
-    return Chat.getCustomerChats(customerId, options);
+    const result = await Chat.getCustomerChats(customerId, options);
+    result.chats = await Promise.all(
+      result.chats.map((chat) => this.enrichChatWithUnreadCounts(chat))
+    );
+    return result;
   }
 
   async getAllChats(options = {}) {
-    return Chat.getAllChats(options);
+    const result = await Chat.getAllChats(options);
+    result.chats = await Promise.all(
+      result.chats.map((chat) => this.enrichChatWithUnreadCounts(chat))
+    );
+    return result;
   }
 
   async getWaitingQueue() {
-    return Chat.getWaitingQueue();
+    const chats = await Chat.getWaitingQueue();
+    return Promise.all(chats.map((chat) => this.enrichChatWithUnreadCounts(chat)));
   }
 
   async sendMessage(chatId, senderId, senderRole, data = {}) {
-    const { content, attachments } = data;
+    const { content, attachments, isInternalNote } = data;
 
     const chat = await Chat.findOne({
       _id: chatId,
@@ -99,7 +136,8 @@ class ChatService {
       throw new AppError("Chat not found", 404);
     }
 
-    if (senderRole !== "admin" && chat.customer.toString() !== senderId.toString()) {
+    // FIX 8: allow 'bot' senderRole in addition to 'admin'
+    if (!['admin', 'bot'].includes(senderRole) && chat.customer.toString() !== senderId.toString()) {
       throw new AppError("You are not authorized to message this chat", 403);
     }
 
@@ -114,35 +152,85 @@ class ChatService {
       sender: senderId,
       senderRole,
       messageType,
+      isInternalNote: isInternalNote || false,
       content,
       attachments,
       deliveredAt: new Date(),
     });
 
-    // Update chat based on sender role
+    // Update chat based on sender role.
+    // CHAT-FIXES-8 Fix 1: Use timestamp-based read tracking instead of static counters.
+    // Unread counts are now derived dynamically: count(messages.createdAt > lastReadAt).
+    const now = new Date();
     const updateData = {
-      lastMessageAt: new Date(),
+      lastMessageAt: now,
     };
 
-    if (senderRole === "customer") {
-      updateData.$inc = { unreadCountAdmin: 1 };
-      updateData.customerTyping = false;
-    } else {
-      updateData.$inc = { unreadCountCustomer: 1 };
-      updateData.adminTyping = false;
+    let didReopen = false;
 
-      // If admin sends first message and chat is waiting, mark as active
-      if (chat.status === "waiting") {
-        updateData.status = "active";
+    if (senderRole === "customer") {
+      // When the customer sends, they've implicitly read up to now
+      updateData.lastReadCustomerAt = now;
+      updateData.customerTyping = false;
+
+      // CHAT-FIXES-9 Fix 1: Reopen resolved/closed chat to ai_handling, reactivating AI bot
+      if (["resolved", "closed"].includes(chat.status)) {
+        updateData.status = "ai_handling";
+        updateData.metadata = {
+          ...(chat.metadata || {}),
+          botActive: true,
+        };
+        didReopen = true;
+      }
+    } else if (senderRole === "bot") {
+      // Bot reply — does not update either read timestamp; customer hasn't read it yet
+      // DO NOT deactivate botActive or change chat status
+    } else {
+      // Human admin reply — admin has seen the conversation up to now
+      updateData.lastReadAdminAt = now;
+      updateData.adminTyping = false;
+      updateData.metadata = {
+        ...(chat.metadata || {}),
+        botActive: false,
+      };
+      if (["ai_handling", "escalated", "waiting", "active"].includes(chat.status)) {
+        updateData.status = "agent_handling";
       }
     }
 
     await Chat.findByIdAndUpdate(chatId, updateData);
 
+    // If customer message reopened the chat, post a system message about AI reactivated
+    if (didReopen) {
+      try {
+        const botUser = await User.findOne({ role: "admin" }).select("_id");
+        if (botUser) {
+          const sysMsg = await ChatMessage.create({
+            chat: chatId,
+            sender: botUser._id,
+            senderRole: "bot",
+            isAiGenerated: false,
+            messageType: "text",
+            content: "Conversation reopened. AI Assistant has been reactivated to assist you.",
+            deliveredAt: new Date(),
+          });
+          if (global.notificationGateway) {
+            const populated = await sysMsg.populate("sender", "firstName lastName email role avatar");
+            global.notificationGateway.io.to(`chat:${chatId.toString()}`).emit("chat:message:new", {
+              chatId: chatId.toString(),
+              message: populated.toObject(),
+              timestamp: new Date(),
+            });
+          }
+        }
+      } catch (err) {
+        console.error("[CHAT-FIXES-9] Failed to send reopen system message:", err.message);
+      }
+    }
+
     // Broadcast message via socket if gateway is available
     if (global.notificationGateway) {
       const populatedMessage = await message.populate("sender", "firstName lastName email role avatar");
-      // Convert to plain object to ensure all fields (including attachments) are serialized
       const messageData = populatedMessage.toObject();
       const roomId = chatId.toString();
 
@@ -154,13 +242,49 @@ class ChatService {
         timestamp: new Date(),
       });
 
-      // Also emit status change if chat became active
-      if (senderRole === "admin" && chat.status === "waiting") {
+      // Broadcast status change socket events
+      if (didReopen) {
         global.notificationGateway.io.to(`chat:${roomId}`).emit("chat:status:changed", {
           chatId: roomId,
-          status: "active",
+          status: "ai_handling",
+          botActive: true,
+        });
+      } else if (senderRole === "admin" && ["ai_handling", "escalated", "waiting", "active"].includes(chat.status)) {
+        global.notificationGateway.io.to(`chat:${roomId}`).emit("chat:status:changed", {
+          chatId: roomId,
+          status: "agent_handling",
+          botActive: false,
         });
       }
+    }
+
+    // Trigger chatbot response asynchronously if customer sent the message and chatbot is active
+    // Wait: if it reopened, the bot is active now, so it should trigger!
+    const updatedBotActive = didReopen ? true : (!chat.metadata || chat.metadata.botActive !== false);
+    if (senderRole === "customer" && updatedBotActive) {
+      (async () => {
+        try {
+          // Get admin/bot user record (system agent)
+          const botUser = await User.findOne({ role: "admin" }).select("_id email");
+          const botUserId = botUser ? botUser._id : senderId;
+
+          // Call Orchestrator — it owns the ai:thinking_start/stop/error indicator lifecycle
+          const chatOrchestrator = require("./chatOrchestrator");
+          const customerUser = await User.findById(senderId).select("email");
+          const customerEmail = customerUser ? customerUser.email : null;
+          const customerId = senderId ? senderId.toString() : null;
+
+          const responseText = await chatOrchestrator.handleUserMessage(
+            chatId, content, customerEmail, customerId
+          );
+
+          await this.sendMessage(chatId, botUserId, "bot", {
+            content: responseText
+          });
+        } catch (error) {
+          console.error("Chatbot processing error:", error.message);
+        }
+      })();
     }
 
     return message.populate("sender", "firstName lastName email role avatar");
@@ -197,12 +321,22 @@ class ChatService {
       throw new AppError("You are not authorized to mark these messages", 403);
     }
 
+    // Mark individual messages read in ChatMessage documents
     const modifiedCount = await ChatMessage.markAsRead(chatId, userRole);
 
+    // CHAT-FIXES-8 Fix 1: Update lastReadAt timestamp — this is the single source of truth.
+    // Derived unread counts: count(messages.createdAt > lastReadAt) will now return 0.
+    const now = new Date();
     if (userRole === "customer") {
-      await Chat.findByIdAndUpdate(chatId, { unreadCountCustomer: 0 });
+      await Chat.findByIdAndUpdate(chatId, {
+        lastReadCustomerAt: now,
+        unreadCountCustomer: 0,
+      });
     } else {
-      await Chat.findByIdAndUpdate(chatId, { unreadCountAdmin: 0 });
+      await Chat.findByIdAndUpdate(chatId, {
+        lastReadAdminAt: now,
+        unreadCountAdmin: 0,
+      });
     }
 
     // Broadcast read status via socket
@@ -212,7 +346,7 @@ class ChatService {
         chatId: roomId,
         userId,
         userRole,
-        readAt: new Date(),
+        readAt: now,
       });
     }
 
@@ -239,6 +373,16 @@ class ChatService {
     await Chat.findByIdAndUpdate(chatId, {
       [updateField]: isTyping,
     });
+
+    // Broadcast typing status via socket
+    if (global.notificationGateway) {
+      const roomId = chatId.toString();
+      global.notificationGateway.io.to(`chat:${roomId}`).emit("chat:typing:status", {
+        chatId: roomId,
+        isTyping,
+        userRole,
+      });
+    }
 
     return { success: true };
   }
@@ -302,11 +446,12 @@ class ChatService {
   }
 
   async getChatStats() {
-    const [totalChats, waitingChats, activeChats, resolvedChats, closedChats] =
+    const [totalChats, aiHandlingChats, escalatedChats, agentHandlingChats, resolvedChats, closedChats] =
       await Promise.all([
         Chat.countDocuments({ deletedAt: null }),
-        Chat.countDocuments({ status: "waiting", deletedAt: null }),
-        Chat.countDocuments({ status: "active", deletedAt: null }),
+        Chat.countDocuments({ status: "ai_handling", deletedAt: null }),
+        Chat.countDocuments({ status: "escalated", deletedAt: null }),
+        Chat.countDocuments({ status: "agent_handling", deletedAt: null }),
         Chat.countDocuments({ status: "resolved", deletedAt: null }),
         Chat.countDocuments({ status: "closed", deletedAt: null }),
       ]);
@@ -314,7 +459,7 @@ class ChatService {
     const chatsWithResponses = await Chat.aggregate([
       {
         $match: {
-          status: { $in: ["active", "resolved", "closed"] },
+          status: { $in: ["ai_handling", "escalated", "agent_handling", "resolved", "closed"] },
           deletedAt: null,
         },
       },
@@ -383,6 +528,97 @@ class ChatService {
 
   async getUnreadCount(chatId, userRole) {
     return ChatMessage.getUnreadCount(chatId, userRole);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Support hours helper (CHAT-FIXES-8 Fix 2)
+  // ---------------------------------------------------------------------------
+  _isSupportOnline() {
+    const now = new Date();
+    const hour = now.getHours(); // server local time
+    return hour >= 9 && hour < 18; // 9 AM – 6 PM
+  }
+
+  async toggleBot(chatId, userId, role, botActive) {
+    const chat = await Chat.findOne({ _id: chatId, deletedAt: null });
+    if (!chat) {
+      throw new AppError("Chat not found", 404);
+    }
+
+    if (role !== "admin" && chat.customer.toString() !== userId.toString()) {
+      throw new AppError("You are not authorized to update this chat", 403);
+    }
+
+    chat.metadata = {
+      ...(chat.metadata || {}),
+      botActive: botActive,
+    };
+
+    if (!botActive) {
+      chat.status = "escalated"; // Escalate to human queue
+      chat.metadata.escalatedAt = new Date();
+      chat.metadata.escalationReason = "customer switched to human agent";
+    } else {
+      chat.status = "ai_handling";
+    }
+
+    await chat.save();
+
+    // On escalation (bot deactivated by customer), post an instant, templated system acknowledgment
+    if (!botActive) {
+      try {
+        // Context-aware acknowledgment based on support hours
+        const online = this._isSupportOnline();
+        const availabilityLine = online
+          ? "An agent will be with you shortly."
+          : "Our support team is currently offline. Our hours are 9:00 AM to 6:00 PM — we'll respond as soon as we're back online, and you'll be notified here.";
+
+        const ackContent = `Thanks for reaching out — I've let our support team know you'd like to speak with someone, and you're in the queue. Feel free to add any extra details here in the meantime. ${availabilityLine}`;
+
+        // Find bot/admin sender for system message
+        const botUser = await User.findOne({ role: "admin" }).select("_id");
+        if (botUser) {
+          await ChatMessage.create({
+            chat: chatId,
+            sender: botUser._id,
+            senderRole: "bot",
+            isAiGenerated: true,
+            messageType: "text",
+            content: ackContent,
+            deliveredAt: new Date(),
+          });
+
+          // Broadcast the acknowledgment message via socket
+          if (global.notificationGateway) {
+            const roomId = chatId.toString();
+            const ackMsg = await ChatMessage.findOne({ chat: chatId, content: ackContent })
+              .sort({ createdAt: -1 })
+              .populate("sender", "firstName lastName email role avatar");
+            if (ackMsg) {
+              global.notificationGateway.io.to(`chat:${roomId}`).emit("chat:message:new", {
+                chatId: roomId,
+                message: ackMsg.toObject(),
+                timestamp: new Date(),
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[CHAT-FIXES-9] Failed to send escalation acknowledgment message:", err.message);
+      }
+    }
+
+    // Broadcast status change
+    if (global.notificationGateway) {
+      const roomId = chatId.toString();
+      global.notificationGateway.io.to(`chat:${roomId}`).emit("chat:status:changed", {
+        chatId: roomId,
+        status: chat.status,
+        botActive: botActive,
+      });
+    }
+
+    return chat;
   }
 }
 

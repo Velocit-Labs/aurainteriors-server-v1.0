@@ -15,7 +15,7 @@ const FROM = process.env.EMAIL_FROM || '"DecorX Studio" <support@aurainteriors.l
 const FRONTEND = process.env.FRONTEND_URL || "http://localhost:5173";
 
 const BRAND = {
-  orange: "#E8622A",
+  orange: "#F27318",
   orangeLight: "#FDF0EA",
   dark: "#1A1714",
   muted: "#64748B",
@@ -30,13 +30,13 @@ const baseTemplate = (content) => `
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DecorX Studio</title>
+  <title>GuchaaDecor</title>
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: ${BRAND.dark}; margin: 0; padding: 0; background-color: ${BRAND.bg};">
   <div style="max-width: 500px; margin: 40px auto; padding: 0 16px;">
 
     <div style="text-align: center; margin-bottom: 24px;">
-      <span style="font-size: 16px; font-weight: 700; color: ${BRAND.dark}; letter-spacing: 0.25em; text-transform: uppercase;">DECORX</span>
+      <span style="font-size: 16px; font-weight: 700; color: ${BRAND.dark}; letter-spacing: 0.25em; text-transform: uppercase;">GUCHAADECOR</span>
     </div>
 
     <div style="background-color: ${BRAND.white}; border: 1px solid ${BRAND.border}; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(26, 23, 20, 0.03);">
@@ -172,6 +172,51 @@ exports.sendMagicLinkEmail = (email, magicLink, firstName) =>
     `),
   );
 
+exports.sendOtpEmail = (email, otp) =>
+  send(
+    email,
+    "Your Admin Verification Code",
+    baseTemplate(`
+      <table border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 0 auto 24px auto;">
+        <tr>
+          <td style="background-color: ${BRAND.orangeLight}; padding: 12px; border-radius: 10px; text-align: center; vertical-align: middle;">
+            <img src="https://img.icons8.com/ios-filled/50/E8622A/security-shield.png" alt="Security" width="20" height="20" style="display: block; border: 0;" />
+          </td>
+        </tr>
+      </table>
+
+      <h1 style="text-align: center; margin: 0 0 12px 0; font-size: 20px; font-weight: 700; color: ${BRAND.dark}; letter-spacing: -0.4px; line-height: 1.2;">Verification Code</h1>
+      <p style="text-align: center; margin: 0 0 24px 0; font-size: 15px; color: ${BRAND.dark}; line-height: 1.6;">
+        Use the following one-time passcode (OTP) to log in to the admin panel. This code is active for <strong style="font-weight: 700;">5 minutes</strong>.
+      </p>
+
+      <table border="0" cellpadding="0" cellspacing="0" style="width: 100%; margin-bottom: 24px;">
+        <tr>
+          <td align="center" style="background-color: #F8FAFC; border: 1px dashed ${BRAND.orange}; border-radius: 8px; padding: 18px; text-align: center;">
+            <span style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: ${BRAND.dark};">${otp}</span>
+          </td>
+        </tr>
+      </table>
+
+      <table border="0" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #F9FAFB; border-left: 3px solid #D1D5DB; border-radius: 8px;">
+        <tr>
+          <td style="padding: 16px; vertical-align: middle;">
+            <table border="0" cellpadding="0" cellspacing="0" style="width: 100%;">
+              <tr>
+                <td style="width: 18px; vertical-align: top; padding-right: 12px;">
+                  <img src="https://img.icons8.com/ios/50/64748B/shield.png" alt="Shield" width="18" height="18" style="display: block; opacity: 0.7; border: 0;" />
+                </td>
+                <td style="font-size: 13.5px; color: ${BRAND.muted}; line-height: 1.5; vertical-align: middle;">
+                  If you did not request this, please change your password immediately.
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    `),
+  );
+
 exports.sendWelcomeEmail = (email, firstName) =>
   send(
     email,
@@ -261,6 +306,156 @@ exports.sendNewsletterBroadcast = async (subscribers, subject, htmlContent) => {
     `[email] Broadcast: ${successful} sent, ${failed} failed / ${subscribers.length} total`,
   );
   return { successful, failed, total: subscribers.length };
+};
+
+exports.sendOrderConfirmationEmail = async (order) => {
+  const {
+    orderId,
+    guestInfo,
+    items,
+    shippingAddress,
+    paymentMethod,
+    paymentStatus,
+    orderedAt,
+  } = order;
+
+  const email = guestInfo.email;
+  const firstName = guestInfo.firstName || "Customer";
+
+  // Format Date
+  const orderDate = new Date(orderedAt || new Date()).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  // Calculate delivery date (10 days after ordered date)
+  const delivery = new Date(orderedAt || new Date());
+  delivery.setDate(delivery.getDate() + 10);
+  const deliveryDate = delivery.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  // Items list HTML
+  const itemsListHtml = items
+    .map(
+      (item) => {
+        const variantStr = item.variant && Object.keys(item.variant).length > 0
+          ? ` (${Object.entries(item.variant)
+              .filter(([, v]) => v)
+              .map(([, v]) => v)
+              .join(" | ")})`
+          : "";
+        return `
+          <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #E5E7EB;">
+            <div style="font-weight: 600; color: #1A1714; font-size: 15px;">
+              ${item.name}${variantStr} &times; ${item.quantity}
+            </div>
+            <div style="color: #64748B; font-size: 14px; margin-top: 4px;">
+              Price: NRs. ${item.price.toLocaleString()}
+            </div>
+          </div>
+        `;
+      }
+    )
+    .join("");
+
+  // Payment Method and Status
+  const methodLabel = paymentMethod === "cod" ? "Cash on Delivery" : "eSewa";
+  const statusLabel = paymentStatus === "paid" ? "Paid" : "Payment Pending";
+
+  // Address HTML formatting
+  const addressHtml = `
+    ${shippingAddress.fullName}<br>
+    ${shippingAddress.addressLine1}${shippingAddress.addressLine2 ? ", " + shippingAddress.addressLine2 : ""}<br>
+    ${shippingAddress.city}${shippingAddress.state ? ", " + shippingAddress.state : ""}<br>
+    ${shippingAddress.country}
+  `;
+
+  // Track URL
+  const trackUrl = `${FRONTEND}/track-order?orderId=${orderId}&email=${encodeURIComponent(email)}`;
+
+  const content = `
+    <h1 style="margin: 0 0 16px 0; font-size: 22px; font-weight: 700; color: #1A1714; letter-spacing: -0.3px; text-align: left;">
+      Your GuchaaDecor Order Has Been Confirmed! 🎉
+    </h1>
+    <p style="margin: 0 0 16px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
+      Hi ${firstName},
+    </p>
+    <p style="margin: 0 0 16px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
+      Thank you for shopping with GuchaaDecor.
+    </p>
+    <p style="margin: 0 0 24px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
+      We've received your order and are preparing it for processing.
+    </p>
+
+    <div style="height: 1px; background-color: #E5E7EB; margin: 24px 0;"></div>
+
+    <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: 700; color: #1A1714; text-transform: uppercase; letter-spacing: 0.05em;">
+      Order Details
+    </h2>
+    <p style="margin: 0 0 8px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
+      <strong style="font-weight: 600;">Order Number:</strong> #${orderId}
+    </p>
+    <p style="margin: 0 0 24px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
+      <strong style="font-weight: 600;">Order Date:</strong> ${orderDate}
+    </p>
+
+    <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: 700; color: #1A1714; text-transform: uppercase; letter-spacing: 0.05em;">
+      Items
+    </h2>
+    <div style="margin-bottom: 24px;">
+      ${itemsListHtml}
+    </div>
+
+    <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: 700; color: #1A1714; text-transform: uppercase; letter-spacing: 0.05em;">
+      Payment
+    </h2>
+    <p style="margin: 0 0 8px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
+      <strong style="font-weight: 600;">Method:</strong> ${methodLabel}
+    </p>
+    <p style="margin: 0 0 24px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
+      <strong style="font-weight: 600;">Status:</strong> ${statusLabel}
+    </p>
+
+    <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: 700; color: #1A1714; text-transform: uppercase; letter-spacing: 0.05em;">
+      Shipping Address
+    </h2>
+    <p style="margin: 0 0 24px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
+      ${addressHtml}
+    </p>
+
+    <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: 700; color: #1A1714; text-transform: uppercase; letter-spacing: 0.05em;">
+      Estimated Delivery
+    </h2>
+    <p style="margin: 0 0 24px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
+      ${deliveryDate}
+    </p>
+
+    <div style="height: 1px; background-color: #E5E7EB; margin: 24px 0;"></div>
+
+    <p style="margin: 0 0 16px 0; font-size: 15px; color: #64748B; line-height: 1.6; text-align: center;">
+      You can track your order anytime from your account.
+    </p>
+
+    <div style="text-align: center; margin: 24px 0 24px 0;">
+      <a href="${trackUrl}" style="display: inline-block; padding: 13px 28px; background-color: #F27318; color: #FFFFFF; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px;">
+        Track Your Order
+      </a>
+    </div>
+
+    <p style="margin: 0 0 16px 0; font-size: 14px; color: #64748B; line-height: 1.6; text-align: center;">
+      If you have any questions, reply to this email or contact our support team.
+    </p>
+
+    <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1A1714; text-align: center;">
+      Thank you for choosing GuchaaDecor!
+    </p>
+  `;
+
+  return send(email, `Your GuchaaDecor Order Has Been Confirmed! 🎉`, baseTemplate(content));
 };
 
 exports.verifyEmailConfig = async () => {

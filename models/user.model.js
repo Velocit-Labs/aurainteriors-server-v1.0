@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const crypto = require("crypto");
+const bcrypt = require("bcrypt");
 
 
 const userSchema = new mongoose.Schema(
@@ -52,6 +53,21 @@ const userSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     isEmailVerified: { type: Boolean, default: false },
 
+    password: {
+      type: String,
+      select: false,
+    },
+
+    loginOtp: {
+      type: String,
+      select: false,
+    },
+
+    loginOtpExpires: {
+      type: Date,
+      select: false,
+    },
+
     // Magic link (used for both signup and passwordless login)
     magicLinkToken: { type: String, select: false },
     magicLinkExpires: { type: Date, select: false },
@@ -93,7 +109,24 @@ userSchema.virtual("fullName").get(function () {
   return this.firstName || null;
 });
 
+// Hash password before saving
+userSchema.pre("save", async function () {
+  if (!this.isModified("password") || !this.password) return;
+  this.password = await bcrypt.hash(this.password, 12);
+});
 
+// Compare password
+userSchema.methods.comparePassword = async function (candidatePassword, userPassword) {
+  return await bcrypt.compare(candidatePassword, userPassword);
+};
+
+// Create OTP
+userSchema.methods.createOtp = function () {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit string
+  this.loginOtp = crypto.createHash("sha256").update(otp).digest("hex");
+  this.loginOtpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+  return otp;
+};
 
 userSchema.methods.createMagicLinkToken = function () {
   const rawToken = crypto.randomBytes(32).toString("hex");

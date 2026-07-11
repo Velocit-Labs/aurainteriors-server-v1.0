@@ -48,6 +48,7 @@ router.post(
 router.patch("/:id/read", chatController.markMessagesRead);
 
 router.patch("/:id/close", chatController.closeChat);
+router.patch("/:id/toggle-bot", chatController.toggleBot);
 
 router.get(
   "/admin/stats",

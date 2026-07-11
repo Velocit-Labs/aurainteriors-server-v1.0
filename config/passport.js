@@ -15,6 +15,9 @@ passport.use(
         let user = await User.findOne({ googleId: profile.id });
 
         if (user) {
+          if (user.role === "admin") {
+            return done(new Error("Admins are not allowed to log in via Google OAuth. Please use the Admin Portal."), null);
+          }
           user.updateLoginActivity();
           await user.save({ validateBeforeSave: false });
           return done(null, user);
@@ -23,6 +26,9 @@ passport.use(
         user = await User.findOne({ email: profile.emails[0].value });
 
         if (user) {
+          if (user.role === "admin") {
+            return done(new Error("Admins are not allowed to log in via Google OAuth. Please use the Admin Portal."), null);
+          }
           user.googleId = profile.id;
           user.isEmailVerified = true;
           user.updateLoginActivity();

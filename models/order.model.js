@@ -124,6 +124,7 @@ const orderSchema = new mongoose.Schema(
     cancelledAt: Date,
     customerNote: String,
     adminNote: String,
+    idempotencyKey: { type: String, unique: true, sparse: true },
   },
   {
     timestamps: true,
@@ -137,6 +138,7 @@ orderSchema.index({ "guestInfo.email": 1 });
 orderSchema.index({ orderStatus: 1 });
 orderSchema.index({ paymentStatus: 1 });
 orderSchema.index({ createdAt: -1 });
+orderSchema.index({ idempotencyKey: 1 });
 
 orderSchema.pre("save", function () {
   if (this.isNew && !this.orderId) {

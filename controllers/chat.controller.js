@@ -209,4 +209,24 @@ exports.getChatStats = catchAsync(async (req, res, next) => {
   });
 });
 
+/**
+ * Toggle AI Bot active state (Customer/Admin)
+ */
+exports.toggleBot = catchAsync(async (req, res, next) => {
+  const { botActive } = req.body;
+
+  const chat = await ChatService.toggleBot(
+    req.params.id,
+    req.user._id,
+    req.user.role,
+    botActive
+  );
+
+  res.status(200).json({
+    status: "success",
+    message: `AI Bot ${botActive ? "enabled" : "disabled"} successfully`,
+    data: { chat },
+  });
+});
+
 module.exports = exports;
