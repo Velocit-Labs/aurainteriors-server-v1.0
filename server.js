@@ -7,6 +7,9 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const passport = require("./config/passport");
 const http = require("http");
+const https = require("https");
+const fs = require("fs");
+const path = require("path");
 
 const { connectDatabase } = require("./config/database");
 const globalErrorHandler = require("./middleware/error.middleware");
@@ -29,9 +32,22 @@ connectDatabase();
 
 const app = express();
 
+const isLocalOrigin = (origin) => {
+  if (!origin) return true;
+  return (
+    origin.startsWith("http://localhost") ||
+    origin.startsWith("https://localhost") ||
+    origin.startsWith("http://127.0.0.1") ||
+    origin.startsWith("https://127.0.0.1") ||
+    /^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin)
+  );
+};
+
 const allowedOrigins = [
   "http://localhost:5173",  // customer dev
   "http://localhost:5174",  // admin dev
+  "https://localhost:5173",
+  "https://localhost:5174",
   process.env.FRONTEND_URL,
   process.env.ADMIN_URL,
 ].filter(Boolean);
@@ -39,14 +55,12 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) === -1) {
-        const msg =
-          "The CORS policy for this site does not allow access from the specified Origin.";
-        return callback(new Error(msg), false);
+      if (!origin || isLocalOrigin(origin) || allowedOrigins.indexOf(origin) !== -1) {
+        return callback(null, true);
       }
-      return callback(null, true);
+      const msg =
+        "The CORS policy for this site does not allow access from the specified Origin.";
+      return callback(new Error(msg), false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -93,7 +107,25 @@ app.use((req, res, next) => {
 
 app.use(globalErrorHandler);
 
-const httpServer = http.createServer(app);
+const keyPath = path.resolve(__dirname, "../certificates/key.pem");
+const certPath = path.resolve(__dirname, "../certificates/cert.pem");
+const hasCerts = fs.existsSync(keyPath) && fs.existsSync(certPath);
+
+if (hasCerts) {
+  console.log("✓ Found SSL certificates, starting in HTTPS mode");
+} else {
+  console.log("ℹ No SSL certificates found, starting in HTTP mode");
+}
+
+const httpServer = hasCerts
+  ? https.createServer(
+      {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath),
+      },
+      app
+    )
+  : http.createServer(app);
 
 let notificationGateway;
 
@@ -148,10 +180,19 @@ const startServer = async () => {
     global.notificationEventEmitter = notificationEventEmitter;
 
     httpServer.listen(PORT, "0.0.0.0", () => {
-      console.log(`✓ Server running on PORT ${PORT}`);
-      console.log(
-        `✓ Active users: ${notificationGateway.getActiveUserCount()}`,
-      );
+      console.log(`✓ Server running on PORT ${PORT} (${hasCerts ? "HTTPS" : "HTTP"})`);
+      console.log(`✓ Active users: ${notificationGateway.getActiveUserCount()}`);
+      
+      const { networkInterfaces } = require("os");
+      const nets = networkInterfaces();
+      console.log("ℹ Local network access URLs:");
+      for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+          if (net.family === "IPv4" && !net.internal) {
+            console.log(`  - ${hasCerts ? 'https' : 'http'}://${net.address}:${PORT}`);
+          }
+        }
+      }
     });
 
     const shutdown = async () => {
