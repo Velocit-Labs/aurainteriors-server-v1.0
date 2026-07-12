@@ -65,7 +65,13 @@ exports.getAllProducts = catchAsync(async (req, res, next) => {
   }
 
   if (status) {
-    filter.status = status;
+    if (status === "all") {
+      // Do not apply status filter to return all (active, out_of_stock, draft)
+    } else if (status.includes(",")) {
+      filter.status = { $in: status.split(",") };
+    } else {
+      filter.status = status;
+    }
   } else {
     filter.status = { $in: ["active", "out_of_stock"] };
   }

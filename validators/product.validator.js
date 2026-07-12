@@ -191,15 +191,10 @@ exports.updateProductSchema = Joi.object({
 
 exports.getProductsQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
-  limit: Joi.number().integer().min(1).max(100).default(20),
+  limit: Joi.number().integer().min(1).max(1000).default(20),
   sort: Joi.string().default("-createdAt"),
   category: Joi.string(),
-  status: Joi.string().valid(
-    "active",
-    "inactive",
-    "out_of_stock",
-    "discontinued"
-  ),
+  status: Joi.string(),
   style: Joi.string(),
   minPrice: Joi.number().min(0),
   maxPrice: Joi.number().min(0),

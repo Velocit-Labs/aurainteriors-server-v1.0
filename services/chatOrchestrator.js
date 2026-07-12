@@ -179,15 +179,13 @@ class ChatOrchestrator {
     return clean;
   }
 
-  /**
-   * Stream response tokens to the client via socket events.
-   */
   async streamTokens(chatRoomId, text) {
     if (!global.notificationGateway || !text) return;
 
     const chunks = text.match(/.{1,4}/g) || [];
     for (const chunk of chunks) {
       this._emitToRoom(chatRoomId, "ai:token", { chatId: chatRoomId, token: chunk });
+      await new Promise((resolve) => setTimeout(resolve, 30));
     }
 
     this._emitToRoom(chatRoomId, "ai:complete", { chatId: chatRoomId });
@@ -242,8 +240,8 @@ class ChatOrchestrator {
     // 1. Fast Path - Greetings
     if (/^\s*(hi|hello|hey|howdy|greetings|good\s+(?:morning|afternoon|evening|day)|welcome)\s*$/i.test(cleanMessage)) {
       this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       const reply = "Hello! Welcome to Aura Interiors. I'm Aura Assistant, your home design and support assistant. How can I help you find the perfect piece or assist you with your orders today?";
-      await this.streamTokens(chatRoomId, reply);
       this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
       console.log(`[ORCHESTRATOR] Fast-path Greeting matched. Completed in ${Date.now() - startTime}ms.`);
       return reply;
@@ -252,8 +250,8 @@ class ChatOrchestrator {
     // 2. Fast Path - Name
     if (/who\s+are\s+you|what\s+is\s+your\s+name|whats\s+your\s+name|your\s+name/i.test(cleanMessage)) {
       this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       const reply = "I'm Aura Assistant, your dedicated home-interiors and support assistant at Aura Interiors. I'm here to help you browse our catalog, check orders, and manage your account details. What can I do for you today?";
-      await this.streamTokens(chatRoomId, reply);
       this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
       console.log(`[ORCHESTRATOR] Fast-path Name matched. Completed in ${Date.now() - startTime}ms.`);
       return reply;
@@ -262,8 +260,8 @@ class ChatOrchestrator {
     // 3. Fast Path - Capabilities
     if (/what\s+can\s+you\s+do|what\s+can\s+you\s+help|how\s+can\s+you\s+help|capabilities/i.test(cleanMessage)) {
       this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       const reply = "I can help you browse our product catalog, get detailed specifications and stock levels, look up your order history and tracking status, check your default or saved addresses, or view your profile information. If you ever need complex assistance, you can click the 'Talk to a human' button above the chat input field to connect with a representative.";
-      await this.streamTokens(chatRoomId, reply);
       this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
       console.log(`[ORCHESTRATOR] Fast-path Capabilities matched. Completed in ${Date.now() - startTime}ms.`);
       return reply;
@@ -272,8 +270,8 @@ class ChatOrchestrator {
     // 4. Fast Path - Bot / Identity
     if (/are\s+you\s+a\s+bot|are\s+you\s+ai|are\s+you\s+a\s+robot|are\s+you\s+human|real\s+person/i.test(cleanMessage)) {
       this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       const reply = "I am Aura Assistant, the AI support chatbot for Aura Interiors. I can instantly look up products, orders, and addresses. If you'd prefer to speak with a human support agent, you can click the 'Talk to a human' button above the chat input field at any time!";
-      await this.streamTokens(chatRoomId, reply);
       this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
       console.log(`[ORCHESTRATOR] Fast-path Bot Identity matched. Completed in ${Date.now() - startTime}ms.`);
       return reply;
@@ -377,7 +375,6 @@ Rules:
       console.log(`[ORCHESTRATOR] LLM loop completed in ${llmTime}ms`);
 
       const cleanResponse = this.sanitizeResponse(rawResponse);
-      await this.streamTokens(chatRoomId, cleanResponse);
 
       const totalTime = Date.now() - startTime;
       console.log(`[ORCHESTRATOR] ✓ Total: ${totalTime}ms | RAG+history: ${parallelTime}ms | LLM: ${llmTime}ms`);
