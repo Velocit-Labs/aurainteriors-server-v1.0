@@ -183,7 +183,7 @@ chatSchema.statics.getAllChats = async function (options = {}) {
       .sort(sortOptions)
       .skip(skip)
       .limit(limit)
-      .populate("customer", "firstName lastName email")
+      .populate("customer", "firstName lastName email avatar")
       .lean(),
     this.countDocuments(query),
   ]);
@@ -205,7 +205,7 @@ chatSchema.statics.getWaitingQueue = async function () {
     deletedAt: null,
   })
     .sort({ createdAt: 1 })
-    .populate("customer", "firstName lastName email")
+    .populate("customer", "firstName lastName email avatar")
     .lean();
 };
 

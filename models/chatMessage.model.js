@@ -95,7 +95,9 @@ chatMessageSchema.index({ chat: 1, senderRole: 1, isRead: 1 });
 chatMessageSchema.pre("validate", function () {
   if (!this.content && (!this.attachments || this.attachments.length === 0)) {
     throw (new Error("Message must have content or attachments"));
-  } else {
+  }
+  if (!this.deliveredAt) {
+    this.deliveredAt = new Date();
   }
 });
 

@@ -78,10 +78,32 @@ class ChatService {
       deletedAt: null,
     });
 
+    const lastMessage = await ChatMessage.findOne({
+      chat: chatJson._id,
+      deletedAt: null,
+    })
+      .sort({ createdAt: -1 })
+      .select("content messageType attachments")
+      .lean();
+
+    let lastMessageText = "";
+    if (lastMessage) {
+      if (lastMessage.messageType === "text") {
+        lastMessageText = lastMessage.content;
+      } else if (lastMessage.messageType === "image") {
+        lastMessageText = "📷 Image";
+      } else if (lastMessage.messageType === "file") {
+        lastMessageText = "📁 File";
+      } else if (lastMessage.messageType === "system") {
+        lastMessageText = lastMessage.content;
+      }
+    }
+
     return {
       ...chatJson,
       unreadCountCustomer: customerUnread,
       unreadCountAdmin: adminUnread,
+      lastMessageText: lastMessageText || chatJson.subject || "General Inquiry",
     };
   }
 
@@ -89,7 +111,7 @@ class ChatService {
     const chat = await Chat.findOne({
       _id: chatId,
       deletedAt: null,
-    }).populate("customer", "firstName lastName email");
+    }).populate("customer", "firstName lastName email avatar");
 
     if (!chat) {
       throw new AppError("Chat not found", 404);
@@ -183,8 +205,21 @@ class ChatService {
         didReopen = true;
       }
     } else if (senderRole === "bot") {
-      // Bot reply — does not update either read timestamp; customer hasn't read it yet
-      // DO NOT deactivate botActive or change chat status
+      // Bot reply — bot has read the customer's messages!
+      updateData.lastReadAdminAt = now;
+      
+      // Mark all customer messages in this chat as read
+      await ChatMessage.markAsRead(chatId, "admin");
+
+      // Broadcast read status via socket so customer's client knows it's read/seen
+      if (global.notificationGateway) {
+        const roomId = chatId.toString();
+        global.notificationGateway.io.to(`chat:${roomId}`).emit("chat:messages:read", {
+          chatId: roomId,
+          userId: senderId,
+          userRole: "admin",
+        });
+      }
     } else {
       // Human admin reply — admin has seen the conversation up to now
       updateData.lastReadAdminAt = now;
@@ -267,6 +302,22 @@ class ChatService {
           // Get admin/bot user record (system agent)
           const botUser = await User.findOne({ role: "admin" }).select("_id email");
           const botUserId = botUser ? botUser._id : senderId;
+
+          // AI reads the customer's message right before processing it
+          await ChatMessage.markAsRead(chatId, "admin");
+          await Chat.findByIdAndUpdate(chatId, { lastReadAdminAt: new Date() });
+
+          if (global.notificationGateway) {
+            const roomId = chatId.toString();
+            global.notificationGateway.io.to(`chat:${roomId}`).emit("chat:messages:read", {
+              chatId: roomId,
+              userId: botUserId,
+              userRole: "admin",
+            });
+          }
+
+          // A brief 700ms pause so the customer sees the grey check check turn blue first
+          await new Promise((resolve) => setTimeout(resolve, 700));
 
           // Call Orchestrator — it owns the ai:thinking_start/stop/error indicator lifecycle
           const chatOrchestrator = require("./chatOrchestrator");
