@@ -9,6 +9,14 @@ const createTransporter = () =>
       user: process.env.BREVO_SMTP_LOGIN,
       pass: process.env.BREVO_SMTP_KEY,
     },
+    connectionTimeout: 10000,
+    socketTimeout: 10000,
+    pool: {
+      maxConnections: 5,
+      maxMessages: 100,
+      rateDelta: 1000,
+      rateLimit: 5,
+    },
   });
 
 const FROM = process.env.EMAIL_FROM || '"DecorX Studio" <support@aurainteriors.live>';
