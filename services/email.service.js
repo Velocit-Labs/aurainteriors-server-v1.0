@@ -104,8 +104,18 @@ const securityNote = (msg) =>
     </tr>
   </table>`;
 
-const send = (to, subject, html) =>
-  createTransporter().sendMail({ from: FROM, to, subject, html });
+const send = (to, subject, html) => {
+  console.log(`[email:send] Attempting to send to: ${to}, subject: ${subject}`);
+  return createTransporter().sendMail({ from: FROM, to, subject, html })
+    .then(result => {
+      console.log(`[email:send] ✓ Email sent successfully. Response:`, result.response);
+      return result;
+    })
+    .catch(err => {
+      console.error(`[email:send] ✗ Failed to send email. Error:`, err.message);
+      throw err;
+    });
+};
 
 exports.sendMagicLinkEmail = (email, magicLink, firstName) =>
   send(
