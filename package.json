@@ -19,6 +19,7 @@
   "license": "ISC",
   "dependencies": {
     "@qdrant/js-client-rest": "^1.18.0",
+    "axios": "^1.6.0",
     "bcrypt": "^6.0.0",
     "bull": "^4.16.5",
     "cloudinary": "^2.8.0",
@@ -38,7 +39,6 @@
     "mongoose": "^9.0.0",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
-    "nodemailer": "^8.0.7",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pdf-parse": "^2.4.5",

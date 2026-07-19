@@ -1,23 +1,15 @@
-const nodemailer = require("nodemailer");
+const axios = require("axios");
 
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host: "smtp-relay.brevo.com",
-    port: 587,
-    secure: false,
-    auth: {
-      user: process.env.BREVO_SMTP_LOGIN,
-      pass: process.env.BREVO_SMTP_KEY,
-    },
-    connectionTimeout: 10000,
-    socketTimeout: 10000,
-    pool: {
-      maxConnections: 5,
-      maxMessages: 100,
-      rateDelta: 1000,
-      rateLimit: 5,
-    },
-  });
+const BREVO_API_BASE = "https://api.brevo.com/v3";
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+
+const brevoClient = axios.create({
+  baseURL: BREVO_API_BASE,
+  headers: {
+    "api-key": BREVO_API_KEY,
+    "Content-Type": "application/json",
+  },
+});
 
 const FROM = process.env.EMAIL_FROM || '"DecorX Studio" <support@aurainteriors.live>';
 const FRONTEND = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -112,17 +104,35 @@ const securityNote = (msg) =>
     </tr>
   </table>`;
 
-const send = (to, subject, html) => {
+const parseEmailAddress = (emailStr) => {
+  // Parse "Name <email@domain.com>" format
+  const match = emailStr.match(/^"?([^<"]*)"?\s*<(.+)>$/);
+  if (match) {
+    return { name: match[1].trim(), email: match[2].trim() };
+  }
+  // Handle plain email
+  return { email: emailStr };
+};
+
+const send = async (to, subject, html) => {
   console.log(`[email:send] Attempting to send to: ${to}, subject: ${subject}`);
-  return createTransporter().sendMail({ from: FROM, to, subject, html })
-    .then(result => {
-      console.log(`[email:send] ✓ Email sent successfully. Response:`, result.response);
-      return result;
-    })
-    .catch(err => {
-      console.error(`[email:send] ✗ Failed to send email. Error:`, err.message);
-      throw err;
+  
+  const sender = parseEmailAddress(FROM);
+  
+  try {
+    const response = await brevoClient.post("/smtp/email", {
+      to: [{ email: to }],
+      sender,
+      subject,
+      htmlContent: html,
     });
+    
+    console.log(`[email:send] ✓ Email sent successfully. Message ID:`, response.data.messageId);
+    return response.data;
+  } catch (err) {
+    console.error(`[email:send] ✗ Failed to send email. Error:`, err.response?.data || err.message);
+    throw err;
+  }
 };
 
 exports.sendMagicLinkEmail = (email, magicLink, firstName) =>
@@ -294,28 +304,35 @@ exports.sendNewsletterWelcomeEmail = (email) =>
   );
 
 exports.sendNewsletterBroadcast = async (subscribers, subject, htmlContent) => {
-  const transporter = createTransporter();
   const BATCH = 50;
   let successful = 0;
   let failed = 0;
 
   for (let i = 0; i < subscribers.length; i += BATCH) {
+    const batchEmails = subscribers.slice(i, i + BATCH).map(({ email }) => ({
+      email,
+      htmlContent: baseTemplate(`
+        ${htmlContent}
+        <p style="margin-top: 32px; font-size: 12px; color: ${BRAND.muted}; text-align: center;">
+          You received this because you subscribed to the DecorX newsletter.
+          <a href="${FRONTEND}/newsletter/unsubscribe?email=${encodeURIComponent(email)}" style="color: ${BRAND.orange}; text-decoration: underline;">Unsubscribe</a>
+        </p>
+      `),
+    }));
+
+    const sender = parseEmailAddress(FROM);
+
     const results = await Promise.allSettled(
-      subscribers.slice(i, i + BATCH).map(({ email }) =>
-        transporter.sendMail({
-          from: FROM,
-          to: email,
+      batchEmails.map(({ email, htmlContent }) =>
+        brevoClient.post("/smtp/email", {
+          to: [{ email }],
+          sender,
           subject,
-          html: baseTemplate(`
-            ${htmlContent}
-            <p style="margin-top: 32px; font-size: 12px; color: ${BRAND.muted}; text-align: center;">
-              You received this because you subscribed to the DecorX newsletter.
-              <a href="${FRONTEND}/newsletter/unsubscribe?email=${encodeURIComponent(email)}" style="color: ${BRAND.orange}; text-decoration: underline;">Unsubscribe</a>
-            </p>
-          `),
+          htmlContent,
         }),
       ),
     );
+    
     successful += results.filter((r) => r.status === "fulfilled").length;
     failed += results.filter((r) => r.status === "rejected").length;
   }
@@ -478,11 +495,12 @@ exports.sendOrderConfirmationEmail = async (order) => {
 
 exports.verifyEmailConfig = async () => {
   try {
-    await createTransporter().verify();
-    console.log("[email] Brevo SMTP config is valid");
+    // Test the API key by making a simple request
+    const response = await brevoClient.get("/account");
+    console.log("[email] Brevo API config is valid. Account:", response.data.email);
     return true;
   } catch (err) {
-    console.error("[email] Brevo SMTP config error:", err.message);
+    console.error("[email] Brevo API config error:", err.response?.data || err.message);
     return false;
   }
 };

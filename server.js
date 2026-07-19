@@ -47,8 +47,7 @@ if (NODE_ENV === "production") {
 
 // Verify email configuration at startup
 console.log("[startup] Email config verification:");
-console.log("[startup] BREVO_SMTP_LOGIN:", process.env.BREVO_SMTP_LOGIN ? "✓ SET" : "✗ MISSING");
-console.log("[startup] BREVO_SMTP_KEY:", process.env.BREVO_SMTP_KEY ? "✓ SET" : "✗ MISSING");
+console.log("[startup] BREVO_API_KEY:", process.env.BREVO_API_KEY ? "✓ SET" : "✗ MISSING");
 console.log("[startup] EMAIL_FROM:", process.env.EMAIL_FROM ? "✓ SET" : "✗ MISSING");
 
 // Test email service at startup

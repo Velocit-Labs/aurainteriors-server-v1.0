@@ -69,7 +69,7 @@ exports.sendMagicLink = async (req, res) => {
 
     const magicLink = `${process.env.FRONTEND_URL}/auth/verify?token=${rawToken}`;
     console.log("[auth] Magic link created:", magicLink);
-    console.log("[auth] Brevo config check - Login:", process.env.BREVO_SMTP_LOGIN ? "✓" : "✗", "Key:", process.env.BREVO_SMTP_KEY ? "✓" : "✗");
+    console.log("[auth] Brevo config check - API Key:", process.env.BREVO_API_KEY ? "✓" : "✗");
     
     console.log("[auth] About to send magic link email to:", email);
     
@@ -201,7 +201,7 @@ exports.adminLogin = async (req, res) => {
     });
 
     console.log("[auth] Admin OTP created for:", email);
-    console.log("[auth] Brevo config check - Login:", process.env.BREVO_SMTP_LOGIN ? "✓" : "✗", "Key:", process.env.BREVO_SMTP_KEY ? "✓" : "✗");
+    console.log("[auth] Brevo config check - API Key:", process.env.BREVO_API_KEY ? "✓" : "✗");
     console.log("[auth] About to send OTP email to:", email);
     
     sendOtpEmail(email, rawOtp)
