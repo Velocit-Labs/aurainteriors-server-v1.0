@@ -29,6 +29,22 @@ const PORT = process.env.PORT || 3001;
 const NODE_ENV = process.env.NODE_ENV || "development";
 const APP_VERSION = process.env.npm_package_version || "1.0.0";
 
+// Validate required environment variables in production
+if (NODE_ENV === "production") {
+  if (!process.env.FRONTEND_URL) {
+    throw new Error("FRONTEND_URL environment variable is required in production");
+  }
+  if (!process.env.ADMIN_URL) {
+    throw new Error("ADMIN_URL environment variable is required in production");
+  }
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET environment variable is required in production");
+  }
+  if (!process.env.MONGO_URI) {
+    throw new Error("MONGO_URI environment variable is required in production");
+  }
+}
+
 const startTime = Date.now();
 
 connectDatabase();
