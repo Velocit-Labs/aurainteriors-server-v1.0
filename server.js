@@ -5,8 +5,10 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
+const mongoose = require("mongoose");
 const passport = require("./config/passport");
 const http = require("http");
+const os = require("os");
 
 const { connectDatabase } = require("./config/database");
 const globalErrorHandler = require("./middleware/error.middleware");
@@ -24,14 +26,18 @@ const {
 } = require("./services/rssFeedService");
 
 const PORT = process.env.PORT || 3001;
+const NODE_ENV = process.env.NODE_ENV || "development";
+const APP_VERSION = process.env.npm_package_version || "1.0.0";
+
+const startTime = Date.now();
 
 connectDatabase();
 
 const app = express();
 
 const allowedOrigins = [
-  "http://localhost:5173",  // customer dev
-  "http://localhost:5174",  // admin dev
+  "http://localhost:5173", // customer dev
+  "http://localhost:5174", // admin dev
   process.env.FRONTEND_URL,
   process.env.ADMIN_URL,
 ].filter(Boolean);
@@ -64,6 +70,69 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(morgan("dev"));
 app.use(passport.initialize());
+
+// --------------------------------------------------------------------------
+// Root & health check routes
+// These are intentionally registered before the versioned API routes and are
+// excluded from auth/rate-limiting middleware so load balancers, uptime
+// monitors, and orchestrators (e.g. Docker, Kubernetes, Render, Railway) can
+// reach them without credentials.
+// --------------------------------------------------------------------------
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "API is running",
+    version: APP_VERSION,
+    environment: NODE_ENV,
+    docs: "/api/v1",
+  });
+});
+
+// Lightweight liveness probe: confirms the process is up and responding.
+// Should stay fast and dependency-free so orchestrators don't restart the
+// pod/container due to a slow downstream dependency.
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Deeper readiness probe: confirms the app and its critical dependencies
+// (e.g. database) are actually ready to serve traffic.
+app.get("/health/ready", async (req, res) => {
+  const dbStateMap = {
+    0: "disconnected",
+    1: "connected",
+    2: "connecting",
+    3: "disconnecting",
+  };
+  const dbState = dbStateMap[mongoose.connection.readyState] || "unknown";
+  const isDbReady = mongoose.connection.readyState === 1;
+
+  const health = {
+    success: isDbReady,
+    status: isDbReady ? "ok" : "degraded",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: NODE_ENV,
+    version: APP_VERSION,
+    host: os.hostname(),
+    dependencies: {
+      database: dbState,
+      notificationGateway: global.notificationGateway ? "up" : "down",
+    },
+    memory: {
+      rssMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
+      heapUsedMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+    },
+  };
+
+  res.status(isDbReady ? 200 : 503).json(health);
+});
 
 app.use("/api/v1/users", require("./routes/user.routes"));
 app.use("/api/v1/auth", require("./routes/auth.routes"));
@@ -143,14 +212,16 @@ const startServer = async () => {
       }
     }, 30000);
 
-
     global.notificationGateway = notificationGateway;
     global.notificationEventEmitter = notificationEventEmitter;
 
     httpServer.listen(PORT, "0.0.0.0", () => {
-      console.log(`✓ Server running on PORT ${PORT}`);
+      console.log(`✓ Server running on PORT ${PORT} [${NODE_ENV}]`);
       console.log(
         `✓ Active users: ${notificationGateway.getActiveUserCount()}`,
+      );
+      console.log(
+        `✓ Boot time: ${((Date.now() - startTime) / 1000).toFixed(2)}s`,
       );
     });
 
