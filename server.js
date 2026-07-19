@@ -45,6 +45,26 @@ if (NODE_ENV === "production") {
   }
 }
 
+// Verify email configuration at startup
+console.log("[startup] Email config verification:");
+console.log("[startup] BREVO_SMTP_LOGIN:", process.env.BREVO_SMTP_LOGIN ? "✓ SET" : "✗ MISSING");
+console.log("[startup] BREVO_SMTP_KEY:", process.env.BREVO_SMTP_KEY ? "✓ SET" : "✗ MISSING");
+console.log("[startup] EMAIL_FROM:", process.env.EMAIL_FROM ? "✓ SET" : "✗ MISSING");
+
+// Test email service at startup
+const { verifyEmailConfig } = require("./services/email.service");
+verifyEmailConfig()
+  .then(isValid => {
+    if (isValid) {
+      console.log("[startup] ✓ Email service verified successfully");
+    } else {
+      console.error("[startup] ✗ Email service verification failed - check Brevo credentials");
+    }
+  })
+  .catch(err => {
+    console.error("[startup] ✗ Email service error:", err.message);
+  });
+
 const startTime = Date.now();
 
 connectDatabase();
