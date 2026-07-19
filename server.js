@@ -24,6 +24,7 @@ const {
   fetchAllFeeds,
   updateFeaturedArticles,
 } = require("./services/rssFeedService");
+const { initializeDatabaseIfEmpty } = require("./services/databaseSeeder");
 
 const PORT = process.env.PORT || 3001;
 const NODE_ENV = process.env.NODE_ENV || "development";
@@ -207,6 +208,10 @@ let notificationGateway;
 const startServer = async () => {
   try {
     console.log("Starting server initialization...");
+    
+    // Initialize database if empty
+    await initializeDatabaseIfEmpty();
+    
     await initializeQueues();
     console.log("✓ Queues initialized");
 
