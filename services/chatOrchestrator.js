@@ -11,7 +11,7 @@ class ChatOrchestrator {
         name: "Mistral",
         url: "https://api.mistral.ai/v1/chat/completions",
         model: "mistral-small-latest",
-        apiKey: process.env.MISTRAL_API_KEY || "NuK4xDN1L7U4uEt6SvWTk9LcxVVeiY9L",
+        apiKey: process.env.MISTRAL_API_KEY,
       },
       {
         name: "Groq",
