@@ -1,23 +1,39 @@
 const nodemailer = require("nodemailer");
+const sgTransport = require("nodemailer-sendgrid-transport");
 
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host: "smtp-relay.brevo.com",
-    port: 587,
-    secure: false,
-    auth: {
-      user: process.env.BREVO_SMTP_LOGIN,
-      pass: process.env.BREVO_SMTP_KEY,
-    },
-    connectionTimeout: 10000,
-    socketTimeout: 10000,
-    pool: {
-      maxConnections: 5,
-      maxMessages: 100,
-      rateDelta: 1000,
-      rateLimit: 5,
-    },
-  });
+const createTransporter = () => {
+  if (process.env.SENDGRID_API_KEY) {
+    // Use SendGrid if available
+    console.log("[email] Using SendGrid for email");
+    return nodemailer.createTransport(
+      sgTransport({
+        auth: {
+          api_key: process.env.SENDGRID_API_KEY,
+        },
+      })
+    );
+  } else {
+    // Fallback to Brevo SMTP
+    console.log("[email] Using Brevo SMTP for email");
+    return nodemailer.createTransport({
+      host: "smtp-relay.brevo.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.BREVO_SMTP_LOGIN,
+        pass: process.env.BREVO_SMTP_KEY,
+      },
+      connectionTimeout: 10000,
+      socketTimeout: 10000,
+      pool: {
+        maxConnections: 5,
+        maxMessages: 100,
+        rateDelta: 1000,
+        rateLimit: 5,
+      },
+    });
+  }
+};
 
 const FROM = process.env.EMAIL_FROM || '"DecorX Studio" <support@aurainteriors.live>';
 const FRONTEND = process.env.FRONTEND_URL || "http://localhost:5173";
