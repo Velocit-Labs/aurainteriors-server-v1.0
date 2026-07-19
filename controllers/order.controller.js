@@ -23,7 +23,7 @@ const ESEWA_CONFIG = {
       : "https://rc.esewa.com.np/api/epay/transaction/status/",
 };
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://aurainteriors.live";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://localhost:5173";
 
 // Generate HMAC-SHA256 signature for eSewa ePay v2
 const generateEsewaSignature = (message) => {

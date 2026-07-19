@@ -11,8 +11,8 @@ const createTransporter = () =>
     },
   });
 
-const FROM = process.env.EMAIL_FROM || '"Aura Interiors" <support@aurainteriors.live>';
-const FRONTEND = process.env.FRONTEND_URL || "https://aurainteriors.live";
+const FROM = process.env.EMAIL_FROM || '"DecorX Studio" <support@aurainteriors.live>';
+const FRONTEND = process.env.FRONTEND_URL || "http://localhost:5173";
 
 const BRAND = {
   orange: "#F27318",

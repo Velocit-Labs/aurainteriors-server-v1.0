@@ -5,7 +5,7 @@ class NotificationGateway {
   constructor(server) {
     this.io = socketIo(server, {
       cors: {
-        origin: process.env.FRONTEND_URL || "https://aurainteriors.live",
+        origin: process.env.FRONTEND_URL || "http://localhost:5173",
         methods: ["GET", "POST"],
         credentials: true,
       },
