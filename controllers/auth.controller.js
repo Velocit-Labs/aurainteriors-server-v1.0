@@ -68,10 +68,16 @@ exports.sendMagicLink = async (req, res) => {
     });
 
     const magicLink = `${process.env.FRONTEND_URL}/auth/verify?token=${rawToken}`;
-    console.log(magicLink);
-    sendMagicLinkEmail(email, magicLink).catch((err) =>
-      console.error(`[email] Magic link failed for ${email}: ${err.message}`),
-    );
+    console.log("[auth] Magic link created:", magicLink);
+    console.log("[auth] Brevo config check - Login:", process.env.BREVO_SMTP_LOGIN ? "✓" : "✗", "Key:", process.env.BREVO_SMTP_KEY ? "✓" : "✗");
+    
+    sendMagicLinkEmail(email, magicLink)
+      .then(() => console.log(`[email] ✓ Magic link sent successfully to ${email}`))
+      .catch((err) => {
+        console.error(`[email] ✗ Magic link failed for ${email}`);
+        console.error(`[email] Error:`, err.message);
+        console.error(`[email] Stack:`, err.stack);
+      });
   } catch (error) {
     res.status(500).json({ status: "error", message: error.message });
   }
@@ -192,9 +198,16 @@ exports.adminLogin = async (req, res) => {
       message: "A verification code has been sent to your email.",
     });
 
-    sendOtpEmail(email, rawOtp).catch((err) =>
-      console.error(`[email] Admin OTP failed for ${email}: ${err.message}`),
-    );
+    console.log("[auth] Admin OTP created for:", email);
+    console.log("[auth] Brevo config check - Login:", process.env.BREVO_SMTP_LOGIN ? "✓" : "✗", "Key:", process.env.BREVO_SMTP_KEY ? "✓" : "✗");
+    
+    sendOtpEmail(email, rawOtp)
+      .then(() => console.log(`[email] ✓ Admin OTP sent successfully to ${email}`))
+      .catch((err) => {
+        console.error(`[email] ✗ Admin OTP failed for ${email}`);
+        console.error(`[email] Error:`, err.message);
+        console.error(`[email] Stack:`, err.stack);
+      });
   } catch (error) {
     res.status(500).json({ status: "error", message: error.message });
   }
