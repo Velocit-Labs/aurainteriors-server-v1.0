@@ -54,6 +54,9 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:5173", // customer dev
   "http://localhost:5174", // admin dev
+  "https://aurainteriors.live", // customer prod
+  "https://admin.aurainteriors.live", // admin prod
+  "https://www.aurainteriors.live", // customer prod with www
   process.env.FRONTEND_URL,
   process.env.ADMIN_URL,
 ].filter(Boolean);
