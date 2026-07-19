@@ -209,7 +209,7 @@ const generateOrderConfirmationEmail = (order) => {
 
           <!-- CTA Button -->
           <div style="text-align: center; margin: 32px 0;">
-            <a href="${process.env.FRONTEND_URL || "http://localhost:5173"}/track-order?orderId=${orderId}&email=${encodeURIComponent(guestInfo.email)}"
+            <a href="${process.env.FRONTEND_URL || "https://aurainteriors.live"}/track-order?orderId=${orderId}&email=${encodeURIComponent(guestInfo.email)}"
                style="display: inline-block; background: linear-gradient(135deg, #0d9488 0%, #115e59 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-weight: 600; font-size: 14px;">
               Track Your Order
             </a>
