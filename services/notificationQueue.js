@@ -8,8 +8,25 @@ const redisConfig = {
   host: process.env.REDIS_HOST || "localhost",
   port: process.env.REDIS_PORT || 6379,
   password: process.env.REDIS_PASSWORD,
-  retryStrategy: (times) => Math.min(times * 50, 2000),
-  maxRetriesPerRequest: null,
+  // Cap retries to prevent retry storm: max 5 attempts with exponential backoff
+  retryStrategy: (times) => {
+    if (times > 5) {
+      // Stop retrying after 5 attempts
+      return null;
+    }
+    return Math.min(times * 100, 2000);
+  },
+  // Limit max retries per request to prevent MaxRetriesPerRequestError
+  maxRetriesPerRequest: 3,
+  // Connection timeout to fail fast if Redis is unreachable
+  connectTimeout: 5000,
+  // Idle timeout to clean up stale connections
+  idleTimeout: 30000,
+  // Enable offline queue but limit size to prevent memory bloat
+  enableOfflineQueue: true,
+  maxRetriesInQueue: 100,
+  // Reduce command timeout from default 5s to 3s to fail faster
+  commandTimeout: 3000,
 };
 
 const defaultJobOptions = {
@@ -113,9 +130,11 @@ notificationQueues.documentIngestion.process(async (job) => {
 });
 
 function setupQueueListeners() {
+  let redisErrorLogged = false; // Flag to log Redis error only once per session
+  
   Object.entries(notificationQueues).forEach(([name, queue]) => {
     queue.on("completed", (job, result) => {
-      console.log(` ${name} job ${job.id} completed:`, result);
+      console.log(` ✓ ${name} job ${job.id} completed`);
     });
 
     queue.on("failed", (job, error) => {
@@ -126,7 +145,13 @@ function setupQueueListeners() {
     });
 
     queue.on("error", (error) => {
-      if (!error.message.includes("ECONNREFUSED")) {
+      // Log Redis connection errors only once to avoid spam
+      if (!redisErrorLogged && (error.message.includes("ECONNREFUSED") || error.message.includes("ETIMEDOUT"))) {
+        console.warn(
+          `[REDIS] Connection unavailable (queue "${name}"): Redis features disabled, API will continue serving requests`
+        );
+        redisErrorLogged = true;
+      } else if (!error.message.includes("ECONNREFUSED") && !error.message.includes("ETIMEDOUT")) {
         console.warn(`⚠ Queue ${name} error:`, error.message);
       }
     });
@@ -187,9 +212,26 @@ async function scheduleCleanupJobs() {
 
 async function initializeQueues() {
   try {
-    console.log("Initializing notification queues...");
+    console.log("[startup] Initializing notification queues...");
     configureQueues();
     setupQueueListeners();
+
+    // Add connection error handler to each queue's Redis client
+    // This prevents retry storms from impacting the event loop
+    Object.entries(notificationQueues).forEach(([name, queue]) => {
+      if (queue.client) {
+        queue.client.on("error", (err) => {
+          // Only log once per unique error to avoid spam
+          if (!err.message.includes("ECONNREFUSED") && !err.message.includes("ETIMEDOUT")) {
+            console.warn(`[REDIS] Queue "${name}" connection error: ${err.message}`);
+          }
+        });
+        
+        queue.client.on("close", () => {
+          console.warn(`[REDIS] Queue "${name}" connection closed`);
+        });
+      }
+    });
 
     // Add timeout for scheduleCleanupJobs to prevent hanging if Redis is unavailable
     const cleanupPromise = scheduleCleanupJobs();
@@ -209,19 +251,22 @@ async function initializeQueues() {
       await Promise.race([cleanupPromise, timeoutPromise]);
     } catch (error) {
       console.warn(
-        "⚠ Queue initialization warning (Redis required for job processing):",
+        "[startup] ⚠ Queue initialization warning (Redis required for job processing):",
         error.message,
+      );
+      console.warn(
+        "[startup] ℹ WebSocket notifications will work without Redis. Background jobs (email, promotions) will not be processed.",
       );
     }
 
-    console.log("✓ Notification queues initialized");
+    console.log("[startup] ✓ Notification queues initialized (graceful degradation enabled)");
   } catch (error) {
     console.warn(
-      "⚠ Queue initialization warning (Redis required for job processing):",
+      "[startup] ⚠ Queue initialization warning (Redis required for job processing):",
       error.message,
     );
     console.warn(
-      "ℹ WebSocket notifications will work without Redis. Install Redis for background job processing.",
+      "[startup] ℹ WebSocket notifications will work without Redis. Install Redis for background job processing.",
     );
   }
 }
