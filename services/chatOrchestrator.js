@@ -136,43 +136,6 @@ class ChatOrchestrator {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  /**
-   * Verify LLM provider configuration at startup
-   * Logs which provider API keys are SET vs MISSING
-   * Does NOT print actual key values for security
-   */
-  verifyLLMProviders() {
-    console.log("[startup] LLM Provider Availability:");
-    
-    const allProviders = [
-      { name: "Mistral", envKey: "MISTRAL_API_KEY" },
-      { name: "Groq", envKey: "GROQ_API_KEY" },
-      { name: "OpenRouter", envKey: "OPENROUTER_API_KEY" },
-    ];
-
-    const configured = [];
-    const missing = [];
-
-    allProviders.forEach(provider => {
-      if (process.env[provider.envKey]) {
-        console.log(`[startup] ✓ ${provider.name}: SET`);
-        configured.push(provider.name);
-      } else {
-        console.log(`[startup] ✗ ${provider.name}: MISSING`);
-        missing.push(provider.name);
-      }
-    });
-
-    if (this.providers.length === 0) {
-      console.error("[startup] ⚠ WARNING: No LLM providers configured! Chat AI features will not work.");
-      console.error("[startup] Set at least one of: MISTRAL_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY");
-    } else {
-      console.log(`[startup] ✓ LLM failover chain ready: ${this.providers.map(p => p.name).join(" → ")}`);
-    }
-
-    return { configured, missing, activeCount: this.providers.length };
-  }
-
   /** Emit a Socket.IO event to a specific chat room */
   _emitToRoom(chatRoomId, event, data) {
     if (global.notificationGateway) {

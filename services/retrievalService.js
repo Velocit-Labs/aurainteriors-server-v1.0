@@ -5,68 +5,12 @@ class RetrievalService {
     const qdrantUrl = process.env.QDRANT_URL || "http://localhost:6333";
     const qdrantApiKey = process.env.QDRANT_API_KEY;
 
-    this.qdrantUrl = qdrantUrl;
-    this.qdrantApiKey = qdrantApiKey;
-
     this.qdrant = new QdrantClient({
       url: qdrantUrl,
       apiKey: qdrantApiKey,
     });
 
     this.collectionName = "knowledge_base";
-  }
-
-  /**
-   * Verify Qdrant connectivity at startup
-   * Checks if URL is reachable and health check passes
-   * Returns status info without throwing errors
-   */
-  async verifyQdrantConnection() {
-    try {
-      console.log("[startup] Qdrant Configuration:");
-      console.log(`[startup] ✓ QDRANT_URL: ${this.qdrantUrl}`);
-      console.log(`[startup] ${this.qdrantApiKey ? "✓" : "✗"} QDRANT_API_KEY: ${this.qdrantApiKey ? "SET" : "NOT SET"}`);
-
-      // Attempt a basic health check / connection test
-      console.log(`[startup] Testing Qdrant connection...`);
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-      const response = await fetch(`${this.qdrantUrl}/health`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          ...(this.qdrantApiKey ? { "Authorization": `Bearer ${this.qdrantApiKey}` } : {}),
-        },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        const healthData = await response.json();
-        console.log(`[startup] ✓ Qdrant health check passed (status: ${healthData.status || "ok"})`);
-        return { connected: true, status: "healthy" };
-      } else {
-        console.warn(`[startup] ⚠ Qdrant health check failed with status ${response.status}`);
-        console.warn(`[startup] NETWORK/CONFIG CHECK: Verify that:`);
-        console.warn(`[startup]   1. QDRANT_URL is correct: ${this.qdrantUrl}`);
-        console.warn(`[startup]   2. Qdrant instance is running at that URL`);
-        console.warn(`[startup]   3. QDRANT_API_KEY is correct (if required)`);
-        console.warn(`[startup]   4. Render environment can reach the Qdrant instance (not localhost if Qdrant is remote)`);
-        return { connected: false, status: `HTTP ${response.status}` };
-      }
-    } catch (error) {
-      console.error(`[startup] ✗ Qdrant connection failed: ${error.message}`);
-      console.error(`[startup] NETWORK/CONFIG CHECK: Verify that:`);
-      console.error(`[startup]   1. QDRANT_URL is correct and reachable: ${this.qdrantUrl}`);
-      console.error(`[startup]   2. Qdrant instance is running and accepting connections`);
-      console.error(`[startup]   3. QDRANT_API_KEY is set correctly (if required)`);
-      console.error(`[startup]   4. Firewall/network policies allow traffic from Render to Qdrant`);
-      console.error(`[startup]   5. For localhost/private URLs, Qdrant must be in the same network or have a public endpoint`);
-      console.error(`[startup] RAG features will be disabled until Qdrant is reachable.`);
-      return { connected: false, status: `Connection error: ${error.message}` };
-    }
   }
 
   /**
@@ -115,7 +59,6 @@ class RetrievalService {
 
   /**
    * Perform vector similarity search against Qdrant index
-   * Logs detailed error info to help diagnose connectivity/config issues
    */
   async search(query, limit = 5, minScore = 0.5) {
     try {
@@ -142,23 +85,7 @@ class RetrievalService {
       console.log(`[RAG] Found ${matches.length} matching chunks matching score >= ${minScore}`);
       return matches;
     } catch (error) {
-      // Provide diagnostic info to help identify if this is a connectivity vs configuration issue
-      if (error.message.includes("fetch failed") || error.message.includes("ECONNREFUSED") || error.message.includes("ETIMEDOUT")) {
-        console.error(`[RAG] ✗ Qdrant connection failed: ${error.message}`);
-        console.error(`[RAG] DIAGNOSTIC: This is likely a network connectivity issue:`);
-        console.error(`[RAG]   - Qdrant URL: ${this.qdrantUrl}`);
-        console.error(`[RAG]   - Check if Qdrant instance is running and reachable from production environment`);
-        console.error(`[RAG]   - If using localhost, Qdrant must be accessible from Render's network`);
-      } else if (error.message.includes("401") || error.message.includes("403")) {
-        console.error(`[RAG] ✗ Qdrant authentication failed: ${error.message}`);
-        console.error(`[RAG] DIAGNOSTIC: Check QDRANT_API_KEY configuration`);
-      } else if (error.message.includes("404")) {
-        console.error(`[RAG] ✗ Qdrant collection not found: ${error.message}`);
-        console.error(`[RAG] DIAGNOSTIC: Collection "${this.collectionName}" does not exist or URL is incorrect`);
-      } else {
-        console.error(`[RAG] ✗ Qdrant similarity search failed: ${error.message}`);
-      }
-      
+      console.error("Qdrant similarity search failed:", error.message);
       // Fallback: return empty array so system does not crash
       return [];
     }
