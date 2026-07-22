@@ -18,14 +18,14 @@ class DbTools {
    * PERF-OPT 9: Helper to manage request-scoped cache
    * Call this at the start of each orchestration request
    */
-  initRequestCache() {
+  static initRequestCache() {
     requestCache.clear();
   }
 
   /**
    * PERF-OPT 9: Helper to clear request cache (call after request completes)
    */
-  clearRequestCache() {
+  static clearRequestCache() {
     requestCache.clear();
   }
 
@@ -40,23 +40,18 @@ class DbTools {
     const cached = categoryCache.get(cacheKey);
 
     if (cached && cached.expiresAt > Date.now()) {
-      console.log(`[PERF] Cache hit: category "${categoryName}"`);
       return cached.category;
     }
 
-    console.log(`[PERF] Cache miss: searching for category "${categoryName}"`);
     const category = await Category.findOne({
       name: { $regex: new RegExp(categoryName, "i") },
     }).lean();
 
     if (category) {
-      console.log(`[PERF] Found category: "${category.name}" (ID: ${category._id})`);
       categoryCache.set(cacheKey, {
         category,
         expiresAt: Date.now() + CATEGORY_CACHE_TTL,
       });
-    } else {
-      console.log(`[PERF] Category not found for "${categoryName}"`);
     }
 
     return category;

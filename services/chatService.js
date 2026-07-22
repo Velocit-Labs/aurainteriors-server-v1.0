@@ -68,7 +68,7 @@ class ChatService {
     // PERF-OPT 5: Use aggregation pipeline to compute unread counts efficiently
     // instead of two separate count queries per chat
     const unreadStats = await ChatMessage.aggregate([
-      { $match: { chat: new mongoose.Types.ObjectId(chatJson._id), deletedAt: null } },
+      { $match: { chat: mongoose.Types.ObjectId(chatJson._id), deletedAt: null } },
       {
         $group: {
           _id: "$chat",
@@ -338,14 +338,6 @@ class ChatService {
         // Get admin/bot user record (system agent)
         const botUser = await User.findOne({ role: "admin" }).select("_id email");
         const botUserId = botUser ? botUser._id : senderId;
-
-        // Emit thinking_start IMMEDIATELY so UI shows typing indicator right away
-        if (global.notificationGateway) {
-          const roomId = chatId.toString();
-          global.notificationGateway.io.to(`chat:${roomId}`).emit("ai:thinking_start", {
-            chatId: roomId,
-          });
-        }
 
         // Queue the bot response processing via BullMQ
         const { queueDocumentIngestion } = require("./notificationQueue");

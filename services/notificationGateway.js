@@ -3,19 +3,9 @@ const jwt = require("jsonwebtoken");
 
 class NotificationGateway {
   constructor(server) {
-    const corsOrigins = [
-      "http://localhost:5173", // customer dev
-      "http://localhost:5174", // admin dev
-      "https://aurainteriors.live", // customer prod
-      "https://admin.aurainteriors.live", // admin prod
-      "https://www.aurainteriors.live", // customer prod with www
-      process.env.FRONTEND_URL,
-      process.env.ADMIN_URL,
-    ].filter(Boolean);
-
     this.io = socketIo(server, {
       cors: {
-        origin: corsOrigins,
+        origin: process.env.FRONTEND_URL || "http://localhost:5173",
         methods: ["GET", "POST"],
         credentials: true,
       },
