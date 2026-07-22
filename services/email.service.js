@@ -11,7 +11,7 @@ const brevoClient = axios.create({
   },
 });
 
-const FROM = process.env.EMAIL_FROM || '"DecorX Studio" <support@aurainteriors.live>';
+const FROM = process.env.EMAIL_FROM || '"Aura Interiors" <support@aurainteriors.live>';
 const FRONTEND = process.env.FRONTEND_URL || "http://localhost:5173";
 
 const BRAND = {
@@ -30,13 +30,13 @@ const baseTemplate = (content) => `
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GuchaaDecor</title>
+  <title>Aura Interiors</title>
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: ${BRAND.dark}; margin: 0; padding: 0; background-color: ${BRAND.bg};">
   <div style="max-width: 500px; margin: 40px auto; padding: 0 16px;">
 
     <div style="text-align: center; margin-bottom: 24px;">
-      <span style="font-size: 16px; font-weight: 700; color: ${BRAND.dark}; letter-spacing: 0.25em; text-transform: uppercase;">GUCHAADECOR</span>
+      <span style="font-size: 16px; font-weight: 700; color: ${BRAND.dark}; letter-spacing: 0.25em; text-transform: uppercase;">AURAINTERIORS</span>
     </div>
 
     <div style="background-color: ${BRAND.white}; border: 1px solid ${BRAND.border}; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(26, 23, 20, 0.03);">
@@ -49,27 +49,27 @@ const baseTemplate = (content) => `
       <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto 20px auto;">
         <tr>
           <td style="padding: 0 10px;">
-            <a href="https://instagram.com/decorx" target="_blank" title="Instagram" style="text-decoration: none;">
+            <a href="https://instagram.com/aurainteriors" target="_blank" title="Instagram" style="text-decoration: none;">
               <img src="https://img.icons8.com/ios-filled/50/64748B/instagram-new.png" alt="Instagram" width="18" height="18" style="display: block; opacity: 0.8;" />
             </a>
           </td>
           <td style="padding: 0 10px;">
-            <a href="https://facebook.com/decorx" target="_blank" title="Facebook" style="text-decoration: none;">
+            <a href="https://facebook.com/aurainteriors" target="_blank" title="Facebook" style="text-decoration: none;">
               <img src="https://img.icons8.com/ios-filled/50/64748B/facebook-new.png" alt="Facebook" width="18" height="18" style="display: block; opacity: 0.8;" />
             </a>
           </td>
           <td style="padding: 0 10px;">
-            <a href="https://twitter.com/decorx" target="_blank" title="Twitter / X" style="text-decoration: none;">
+            <a href="https://twitter.com/aurainteriors" target="_blank" title="Twitter / X" style="text-decoration: none;">
               <img src="https://img.icons8.com/ios-filled/50/64748B/x.png" alt="Twitter" width="18" height="18" style="display: block; opacity: 0.8;" />
             </a>
           </td>
           <td style="padding: 0 10px;">
-            <a href="https://discord.gg/decorx" target="_blank" title="Discord" style="text-decoration: none;">
+            <a href="https://discord.gg/aurainteriors" target="_blank" title="Discord" style="text-decoration: none;">
               <img src="https://img.icons8.com/ios-filled/50/64748B/discord-logo.png" alt="Discord" width="18" height="18" style="display: block; opacity: 0.8;" />
             </a>
           </td>
           <td style="padding: 0 10px;">
-            <a href="https://youtube.com/decorx" target="_blank" title="YouTube" style="text-decoration: none;">
+            <a href="https://youtube.com/aurainteriors" target="_blank" title="YouTube" style="text-decoration: none;">
               <img src="https://img.icons8.com/ios-filled/50/64748B/youtube-play.png" alt="YouTube" width="18" height="18" style="display: block; opacity: 0.8;" />
             </a>
           </td>
@@ -77,9 +77,9 @@ const baseTemplate = (content) => `
       </table>
 
       <p style="margin: 0; font-size: 12px; color: ${BRAND.muted}; line-height: 1.8;">
-        DecorX Studio, Chwakpa Tole, Hattiban,<br />
+        Aura Interiors, Chwakpa Tole, Hattiban,<br />
         Lalitpur, 44600 Nepal<br />
-        &copy; 2026 DecorX Studio PBC, Inc.
+        &copy; 2026 Aura Interiors PBC, Inc.
       </p>
     </div>
 
@@ -138,7 +138,7 @@ const send = async (to, subject, html) => {
 exports.sendMagicLinkEmail = (email, magicLink, firstName) =>
   send(
     email,
-    "Your sign-in link for DecorX",
+    "Your sign-in link for Aura Interiors",
     baseTemplate(`
       <table border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 0 auto 24px auto;">
         <tr>
@@ -148,7 +148,7 @@ exports.sendMagicLinkEmail = (email, magicLink, firstName) =>
         </tr>
       </table>
 
-      <h1 style="text-align: center; margin: 0 0 12px 0; font-size: 20px; font-weight: 700; color: ${BRAND.dark}; letter-spacing: -0.4px; line-height: 1.2;">Sign in to DecorX</h1>
+      <h1 style="text-align: center; margin: 0 0 12px 0; font-size: 20px; font-weight: 700; color: ${BRAND.dark}; letter-spacing: -0.4px; line-height: 1.2;">Sign in to Aura Interiors</h1>
       <p style="text-align: center; margin: 0 0 24px 0; font-size: 15px; color: ${BRAND.dark}; line-height: 1.6;">
         Hi ${email} — click the button below to sign in. This link is secure and expires in <strong style="font-weight: 700;">15 minutes</strong>.
       </p>
@@ -248,7 +248,7 @@ exports.sendOtpEmail = (email, otp) =>
 exports.sendWelcomeEmail = (email, firstName) =>
   send(
     email,
-    "Welcome to DecorX",
+    "Welcome to Aura Interiors",
     baseTemplate(`
       <h1 style="margin: 0 0 8px 0; font-size: 22px; font-weight: 600; color: ${BRAND.dark}; letter-spacing: -0.3px;">Welcome${firstName ? `, ${firstName}` : ""}!</h1>
       <p style="margin: 0 0 16px 0; font-size: 15px; color: ${BRAND.muted}; line-height: 1.6;">
@@ -266,11 +266,11 @@ exports.sendWelcomeEmail = (email, firstName) =>
 exports.sendNewsletterWelcomeEmail = (email) =>
   send(
     email,
-    "You're subscribed to DecorX",
+    "You're subscribed to Aura Interiors",
     baseTemplate(`
       <h1 style="margin: 0 0 8px 0; font-size: 22px; font-weight: 600; color: ${BRAND.dark}; letter-spacing: -0.3px;">You're on the list</h1>
       <p style="margin: 0 0 24px 0; font-size: 15px; color: ${BRAND.muted}; line-height: 1.6;">
-        Thanks for subscribing to the DecorX newsletter. Here's what to expect:
+        Thanks for subscribing to the Aura Interiors newsletter. Here's what to expect:
       </p>
 
       <table border="0" cellpadding="0" cellspacing="0" style="width: 100%;">
@@ -314,7 +314,7 @@ exports.sendNewsletterBroadcast = async (subscribers, subject, htmlContent) => {
       htmlContent: baseTemplate(`
         ${htmlContent}
         <p style="margin-top: 32px; font-size: 12px; color: ${BRAND.muted}; text-align: center;">
-          You received this because you subscribed to the DecorX newsletter.
+          You received this because you subscribed to the Aura Interiors newsletter.
           <a href="${FRONTEND}/newsletter/unsubscribe?email=${encodeURIComponent(email)}" style="color: ${BRAND.orange}; text-decoration: underline;">Unsubscribe</a>
         </p>
       `),
@@ -414,13 +414,13 @@ exports.sendOrderConfirmationEmail = async (order) => {
 
   const content = `
     <h1 style="margin: 0 0 16px 0; font-size: 22px; font-weight: 700; color: #1A1714; letter-spacing: -0.3px; text-align: left;">
-      Your GuchaaDecor Order Has Been Confirmed! 🎉
+      Your Aura Interiors Order Has Been Confirmed! 🎉
     </h1>
     <p style="margin: 0 0 16px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
       Hi ${firstName},
     </p>
     <p style="margin: 0 0 16px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
-      Thank you for shopping with GuchaaDecor.
+      Thank you for shopping with Aura Interiors.
     </p>
     <p style="margin: 0 0 24px 0; font-size: 15px; color: #1A1714; line-height: 1.6;">
       We've received your order and are preparing it for processing.
@@ -486,11 +486,11 @@ exports.sendOrderConfirmationEmail = async (order) => {
     </p>
 
     <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1A1714; text-align: center;">
-      Thank you for choosing GuchaaDecor!
+      Thank you for choosing Aura Interiors!
     </p>
   `;
 
-  return send(email, `Your GuchaaDecor Order Has Been Confirmed! 🎉`, baseTemplate(content));
+  return send(email, `Your Aura Interiors Order Has Been Confirmed! 🎉`, baseTemplate(content));
 };
 
 exports.verifyEmailConfig = async () => {

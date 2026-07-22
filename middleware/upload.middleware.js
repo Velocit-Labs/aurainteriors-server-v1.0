@@ -43,7 +43,7 @@ const modelFileFilter = (req, file, cb) => {
 const upload = multer({
   storage: multerStorage,
   fileFilter: multerFilter,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 }, // Increased to 20MB
 });
 
 const productUpload = multer({
@@ -114,13 +114,8 @@ exports.resizeCategoryImage = async (req, res, next) => {
   try {
     if (!req.file) return next();
 
-    const resizedBuffer = await sharp(req.file.buffer)
-      .resize(800, 600, { fit: "cover" })
-      .toFormat("jpeg")
-      .jpeg({ quality: 90 })
-      .toBuffer();
-
-    const result = await uploadToCloudinary(resizedBuffer, {
+    // Upload image as-is without any transformation
+    const result = await uploadToCloudinary(req.file.buffer, {
       folder: "aura/categories",
       public_id: generatePublicId("category"),
       resource_type: "image",
