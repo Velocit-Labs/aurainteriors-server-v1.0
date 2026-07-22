@@ -271,52 +271,55 @@ class ChatOrchestrator {
     const startTime = Date.now();
     const chatRoomId = chatId.toString();
 
-    // FIX 2 (Fast-Path Layer): Intercept greetings, name, capabilities, & identity questions instantly (sub-50ms)
-    const cleanMessage = userMessageContent.trim().toLowerCase().replace(/[!?.,]/g, "");
-
-    // 1. Fast Path - Greetings
-    if (/^\s*(hi|hello|hey|howdy|greetings|good\s+(?:morning|afternoon|evening|day)|welcome)\s*$/i.test(cleanMessage)) {
-      this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const reply = "Hello! Welcome to Aura Interiors. I'm Aura Assistant, your home design and support assistant. How can I help you find the perfect piece or assist you with your orders today?";
-      this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
-      console.log(`[ORCHESTRATOR] Fast-path Greeting matched. Completed in ${Date.now() - startTime}ms.`);
-      return reply;
-    }
-
-    // 2. Fast Path - Name
-    if (/who\s+are\s+you|what\s+is\s+your\s+name|whats\s+your\s+name|your\s+name/i.test(cleanMessage)) {
-      this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const reply = "I'm Aura Assistant, your dedicated home-interiors and support assistant at Aura Interiors. I'm here to help you browse our catalog, check orders, and manage your account details. What can I do for you today?";
-      this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
-      console.log(`[ORCHESTRATOR] Fast-path Name matched. Completed in ${Date.now() - startTime}ms.`);
-      return reply;
-    }
-
-    // 3. Fast Path - Capabilities
-    if (/what\s+can\s+you\s+do|what\s+can\s+you\s+help|how\s+can\s+you\s+help|capabilities/i.test(cleanMessage)) {
-      this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const reply = "I can help you browse our product catalog, get detailed specifications and stock levels, look up your order history and tracking status, check your default or saved addresses, or view your profile information. If you ever need complex assistance, you can click the 'Talk to a human' button above the chat input field to connect with a representative.";
-      this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
-      console.log(`[ORCHESTRATOR] Fast-path Capabilities matched. Completed in ${Date.now() - startTime}ms.`);
-      return reply;
-    }
-
-    // 4. Fast Path - Bot / Identity
-    if (/are\s+you\s+a\s+bot|are\s+you\s+ai|are\s+you\s+a\s+robot|are\s+you\s+human|real\s+person/i.test(cleanMessage)) {
-      this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const reply = "I am Aura Assistant, the AI support chatbot for Aura Interiors. I can instantly look up products, orders, and addresses. If you'd prefer to speak with a human support agent, you can click the 'Talk to a human' button above the chat input field at any time!";
-      this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
-      console.log(`[ORCHESTRATOR] Fast-path Bot Identity matched. Completed in ${Date.now() - startTime}ms.`);
-      return reply;
-    }
-
-    this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
+    // PERF-OPT 9: Initialize request-level cache at start of orchestration
+    dbTools.initRequestCache();
 
     try {
+      // FIX 2 (Fast-Path Layer): Intercept greetings, name, capabilities, & identity questions instantly (sub-50ms)
+      const cleanMessage = userMessageContent.trim().toLowerCase().replace(/[!?.,]/g, "");
+
+      // 1. Fast Path - Greetings
+      if (/^\s*(hi|hello|hey|howdy|greetings|good\s+(?:morning|afternoon|evening|day)|welcome)\s*$/i.test(cleanMessage)) {
+        this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const reply = "Hello! Welcome to Aura Interiors. I'm Aura Assistant, your home design and support assistant. How can I help you find the perfect piece or assist you with your orders today?";
+        this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
+        console.log(`[ORCHESTRATOR] Fast-path Greeting matched. Completed in ${Date.now() - startTime}ms.`);
+        return reply;
+      }
+
+      // 2. Fast Path - Name
+      if (/who\s+are\s+you|what\s+is\s+your\s+name|whats\s+your\s+name|your\s+name/i.test(cleanMessage)) {
+        this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const reply = "I'm Aura Assistant, your dedicated home-interiors and support assistant at Aura Interiors. I'm here to help you browse our catalog, check orders, and manage your account details. What can I do for you today?";
+        this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
+        console.log(`[ORCHESTRATOR] Fast-path Name matched. Completed in ${Date.now() - startTime}ms.`);
+        return reply;
+      }
+
+      // 3. Fast Path - Capabilities
+      if (/what\s+can\s+you\s+do|what\s+can\s+you\s+help|how\s+can\s+you\s+help|capabilities/i.test(cleanMessage)) {
+        this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const reply = "I can help you browse our product catalog, get detailed specifications and stock levels, look up your order history and tracking status, check your default or saved addresses, or view your profile information. If you ever need complex assistance, you can click the 'Talk to a human' button above the chat input field to connect with a representative.";
+        this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
+        console.log(`[ORCHESTRATOR] Fast-path Capabilities matched. Completed in ${Date.now() - startTime}ms.`);
+        return reply;
+      }
+
+      // 4. Fast Path - Bot / Identity
+      if (/are\s+you\s+a\s+bot|are\s+you\s+ai|are\s+you\s+a\s+robot|are\s+you\s+human|real\s+person/i.test(cleanMessage)) {
+        this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const reply = "I am Aura Assistant, the AI support chatbot for Aura Interiors. I can instantly look up products, orders, and addresses. If you'd prefer to speak with a human support agent, you can click the 'Talk to a human' button above the chat input field at any time!";
+        this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
+        console.log(`[ORCHESTRATOR] Fast-path Bot Identity matched. Completed in ${Date.now() - startTime}ms.`);
+        return reply;
+      }
+
+      this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
+
       const chat = await Chat.findById(chatId);
       if (!chat) throw new Error("Chat session not found");
 
@@ -362,11 +365,17 @@ class ChatOrchestrator {
       }
 
       // Build RAG context string
+      // PERF-OPT 7: Reduce RAG context embedding in system prompt
+      // Instead of embedding full document text inline (which bloats the prompt),
+      // only include doc names/sources. LLM can ask via tools if it needs details.
       let contextText = "No relevant knowledge documents found.";
+      let ragDocReferences = [];
       if (ragChunks.length > 0) {
-        contextText = ragChunks
-          .map((chunk, i) => `[Doc ${i + 1} - Source: ${chunk.fileName}]:\n${chunk.text}`)
-          .join("\n\n");
+        ragDocReferences = ragChunks.map((chunk, i) => 
+          `- Doc ${i + 1}: "${chunk.fileName}" (relevance: ${(chunk.score * 100).toFixed(0)}%)`
+        );
+        // Only include names and scores, not full text
+        contextText = `Available knowledge base documents:\n${ragDocReferences.join("\n")}\nUse the tools or context above to answer questions accurately.`;
       }
 
       const customerContext = customerId
@@ -387,22 +396,19 @@ TONE & STYLE RULES:
   * Bad: "Aura Assistant."
   * Good: "I'm Aura Assistant — happy to help! How can I assist you with your home interior needs today?"
 
-Knowledge Context (FAQs, policies, and shipping/refund details):
----
+Available Knowledge Base:
 ${contextText}
----
 
 Customer Context:
 ${customerContext}
 
 Rules:
-1. Try to answer user questions using the Knowledge Context above.
-2. If the user asks about product prices, details, inventory, category listings, order history, addresses, or profile info, ALWAYS call the corresponding database tools instead of guessing.
-3. Grounding: Never make up policies, prices, stock levels, or order details. Keep responses factual.
-4. Links: When mentioning products or providing links, always format them as markdown links: [Product Name](url). Only use URLs you received from tool results — never construct or guess a URL yourself.
-5. Catalog Validation: Before recommending any product mentioned in the RAG context, you MUST verify that the product exists and is active in the live store by calling 'searchProducts' or 'getProductDetails'. If the search fails or the product is out of stock, DO NOT recommend it.
-6. NO ORDER PLACEMENT: You cannot place orders, edit addresses, or process payments directly. If the customer wants to make a purchase, guide them to complete it themselves by providing the direct product page link.
-7. NO MANUAL ESCALATION: You cannot transfer users to human agents. If they request an agent or you cannot answer, direct them to use the 'Talk to a human' button above the chat input area.`;
+1. If the user asks about product prices, details, inventory, category listings, order history, addresses, or profile info, ALWAYS call the corresponding database tools instead of guessing.
+2. Grounding: Never make up policies, prices, stock levels, or order details. Keep responses factual.
+3. Links: When mentioning products or providing links, always format them as markdown links: [Product Name](url). Only use URLs you received from tool results — never construct or guess a URL yourself.
+4. Catalog Validation: Before recommending any product, verify it exists by calling 'searchProducts' or 'getProductDetails'. If search fails or product is out of stock, DO NOT recommend it.
+5. NO ORDER PLACEMENT: You cannot place orders, edit addresses, or process payments. If customer wants to purchase, guide them to the product page.
+6. NO MANUAL ESCALATION: You cannot transfer to human agents. If they request one, direct them to the 'Talk to a human' button above chat input.`;
 
       const apiMessages = [{ role: "system", content: systemPrompt }, ...messages];
 
@@ -422,6 +428,9 @@ Rules:
       console.error("[ORCHESTRATOR] Error in handleUserMessage:", error.message);
       this._emitToRoom(chatRoomId, "ai:error", { chatId: chatRoomId, error: "Processing failed" });
       return "I encountered an error. If you need help, please click the 'Talk to a human' button above to reach a representative.";
+    } finally {
+      // PERF-OPT 9: Clear request cache after orchestration completes
+      dbTools.clearRequestCache();
     }
   }
 
