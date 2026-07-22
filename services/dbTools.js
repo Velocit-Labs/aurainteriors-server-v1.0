@@ -5,58 +5,7 @@ const Order = require("../models/order.model");
 const Address = require("../models/address.model");
 const User = require("../models/user.model");
 
-// PERF-OPT 8: In-memory category cache with TTL (60 second) to avoid repeated queries
-const categoryCache = new Map();
-const CATEGORY_CACHE_TTL = 60 * 1000; // 60 seconds
-
-// PERF-OPT 9: Request-level cache for user profile & addresses
-// Prevents N+1 queries when the same user is fetched multiple times in one orchestration flow
-const requestCache = new Map();
-
 class DbTools {
-  /**
-   * PERF-OPT 9: Helper to manage request-scoped cache
-   * Call this at the start of each orchestration request
-   */
-  static initRequestCache() {
-    requestCache.clear();
-  }
-
-  /**
-   * PERF-OPT 9: Helper to clear request cache (call after request completes)
-   */
-  static clearRequestCache() {
-    requestCache.clear();
-  }
-
-  /**
-   * PERF-OPT 8: Get category from cache or fetch and cache it
-   */
-  async getCategoryByName(categoryName) {
-    if (!categoryName) return null;
-
-    const normalizedName = categoryName.toLowerCase();
-    const cacheKey = `cat:${normalizedName}`;
-    const cached = categoryCache.get(cacheKey);
-
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.category;
-    }
-
-    const category = await Category.findOne({
-      name: { $regex: new RegExp(categoryName, "i") },
-    }).lean();
-
-    if (category) {
-      categoryCache.set(cacheKey, {
-        category,
-        expiresAt: Date.now() + CATEGORY_CACHE_TTL,
-      });
-    }
-
-    return category;
-  }
-
   /**
    * Search product catalog
    */
@@ -65,7 +14,9 @@ class DbTools {
       const dbQuery = { status: "active" };
 
       if (categoryName) {
-        const category = await this.getCategoryByName(categoryName);
+        const category = await Category.findOne({
+          name: { $regex: new RegExp(categoryName, "i") },
+        });
         if (category) {
           dbQuery.category = category._id;
         }
@@ -223,24 +174,15 @@ class DbTools {
 
   /**
    * Retrieve default address for logged-in user (read-only).
-   * PERF-OPT 9: Uses request-level cache to prevent duplicate queries
    */
   async getDefaultAddress({ userId }) {
     try {
       if (!userId) return { error: "User context not available." };
-      
-      // Check request cache first
-      const cacheKey = `default-address:${userId}`;
-      if (requestCache.has(cacheKey)) {
-        return requestCache.get(cacheKey);
-      }
+      const address = await Address.findOne({ user: userId, isDefault: true }).lean();
+      if (address) return address;
 
-      const address = await Address.findOne({ user: userId, isDefault: true, deletedAt: null }).lean();
-      const result = address || null;
-      
-      // Store in request cache
-      requestCache.set(cacheKey, result);
-      return result;
+      const fallback = await Address.findOne({ user: userId }).lean();
+      return fallback || null;
     } catch (error) {
       console.error("DbTools getDefaultAddress error:", error.message);
       return null;
@@ -249,22 +191,11 @@ class DbTools {
 
   /**
    * Retrieve all saved addresses for logged-in user (read-only).
-   * PERF-OPT 9: Uses request-level cache to prevent duplicate queries
    */
   async getSavedAddresses({ userId }) {
     try {
       if (!userId) return { error: "User context not available." };
-      
-      // Check request cache first
-      const cacheKey = `addresses:${userId}`;
-      if (requestCache.has(cacheKey)) {
-        return requestCache.get(cacheKey);
-      }
-
-      const addresses = await Address.find({ user: userId, deletedAt: null }).lean();
-      
-      // Store in request cache
-      requestCache.set(cacheKey, addresses);
+      const addresses = await Address.find({ user: userId }).lean();
       return addresses;
     } catch (error) {
       console.error("DbTools getSavedAddresses error:", error.message);
@@ -274,31 +205,18 @@ class DbTools {
 
   /**
    * Retrieve customer profile information (read-only).
-   * PERF-OPT 9: Uses request-level cache to prevent duplicate queries
    */
   async getProfileInfo({ userId }) {
     try {
       if (!userId) return { error: "User context not available." };
-      
-      // Check request cache first
-      const cacheKey = `profile:${userId}`;
-      if (requestCache.has(cacheKey)) {
-        return requestCache.get(cacheKey);
-      }
-
       const user = await User.findById(userId).select("firstName lastName email role phone createdAt").lean();
       if (!user) return { error: "User profile not found" };
-      
-      const result = {
+      return {
         fullName: `${user.firstName} ${user.lastName}`,
         email: user.email,
         phone: user.phone || "Not provided",
         memberSince: user.createdAt,
       };
-      
-      // Store in request cache
-      requestCache.set(cacheKey, result);
-      return result;
     } catch (error) {
       console.error("DbTools getProfileInfo error:", error.message);
       return { error: "Failed to retrieve profile information" };
