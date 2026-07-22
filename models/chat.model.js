@@ -99,6 +99,8 @@ chatSchema.index({ customer: 1, status: 1 });
 chatSchema.index({ createdAt: -1 });
 chatSchema.index({ lastMessageAt: -1 });
 chatSchema.index({ status: 1, lastMessageAt: -1 });
+// PERF-OPT 6: Index on deletedAt to speed up "not deleted" queries
+chatSchema.index({ deletedAt: 1 });
 
 chatSchema.virtual("isActive").get(function () {
   return ["ai_handling", "escalated", "agent_handling"].includes(this.status);
