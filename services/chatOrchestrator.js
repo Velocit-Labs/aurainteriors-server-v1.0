@@ -194,6 +194,20 @@ class ChatOrchestrator {
     clean = clean.replace(/<\/function>/gi, "").trim();
     clean = clean.replace(/(?:<)?function=\w+>\{[^}]*\}/g, "").trim();
     clean = clean.replace(/\{"name":\s*"\w+",\s*"parameters":\s*\{[^}]*\}\}/g, "").trim();
+    
+    // Strip (function=...) patterns with parentheses
+    clean = clean.replace(/\(\s*function=\w+\s*\)/gi, "").trim();
+    clean = clean.replace(/\(function=[^)]*\)/gi, "").trim();
+    clean = clean.replace(/\(.*?function\s*=.*?\)/gi, "").trim();
+    
+    // Strip (waitForData) and similar pseudo-function calls
+    clean = clean.replace(/\(\s*(?:waitForData|function\s*response|getProductDetails\s*response)\s*\)/gi, "").trim();
+    
+    // Strip /toolName> patterns (incomplete tool calls at end of lines)
+    clean = clean.replace(/\/\w+>/g, "").trim();
+    
+    // Strip function call syntax at end of sentences
+    clean = clean.replace(/\s*\/(?:searchProducts|getProductDetails|getOrderStatus|getOrderHistory|getDefaultAddress|getSavedAddresses|getProfileInfo)>.*$/gm, "").trim();
 
     // Strip internal narration about calling tools/functions
     clean = clean.replace(/I(?:'ll| will| need to| am going to)(?: use| call| invoke| execute)[\w\s]*(?:function|tool|API)[^.]*\./gi, "").trim();
@@ -281,7 +295,6 @@ class ChatOrchestrator {
       // 1. Fast Path - Greetings
       if (/^\s*(hi|hello|hey|howdy|greetings|good\s+(?:morning|afternoon|evening|day)|welcome)\s*$/i.test(cleanMessage)) {
         this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
         const reply = "Hello! Welcome to Aura Interiors. I'm Aura Assistant, your home design and support assistant. How can I help you find the perfect piece or assist you with your orders today?";
         this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
         console.log(`[ORCHESTRATOR] Fast-path Greeting matched. Completed in ${Date.now() - startTime}ms.`);
@@ -291,7 +304,6 @@ class ChatOrchestrator {
       // 2. Fast Path - Name
       if (/who\s+are\s+you|what\s+is\s+your\s+name|whats\s+your\s+name|your\s+name/i.test(cleanMessage)) {
         this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
         const reply = "I'm Aura Assistant, your dedicated home-interiors and support assistant at Aura Interiors. I'm here to help you browse our catalog, check orders, and manage your account details. What can I do for you today?";
         this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
         console.log(`[ORCHESTRATOR] Fast-path Name matched. Completed in ${Date.now() - startTime}ms.`);
@@ -301,7 +313,6 @@ class ChatOrchestrator {
       // 3. Fast Path - Capabilities
       if (/what\s+can\s+you\s+do|what\s+can\s+you\s+help|how\s+can\s+you\s+help|capabilities/i.test(cleanMessage)) {
         this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
         const reply = "I can help you browse our product catalog, get detailed specifications and stock levels, look up your order history and tracking status, check your default or saved addresses, or view your profile information. If you ever need complex assistance, you can click the 'Talk to a human' button above the chat input field to connect with a representative.";
         this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
         console.log(`[ORCHESTRATOR] Fast-path Capabilities matched. Completed in ${Date.now() - startTime}ms.`);
@@ -311,7 +322,6 @@ class ChatOrchestrator {
       // 4. Fast Path - Bot / Identity
       if (/are\s+you\s+a\s+bot|are\s+you\s+ai|are\s+you\s+a\s+robot|are\s+you\s+human|real\s+person/i.test(cleanMessage)) {
         this._emitToRoom(chatRoomId, "ai:thinking_start", { chatId: chatRoomId });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
         const reply = "I am Aura Assistant, the AI support chatbot for Aura Interiors. I can instantly look up products, orders, and addresses. If you'd prefer to speak with a human support agent, you can click the 'Talk to a human' button above the chat input field at any time!";
         this._emitToRoom(chatRoomId, "ai:thinking_stop", { chatId: chatRoomId });
         console.log(`[ORCHESTRATOR] Fast-path Bot Identity matched. Completed in ${Date.now() - startTime}ms.`);
@@ -403,12 +413,25 @@ Customer Context:
 ${customerContext}
 
 Rules:
-1. If the user asks about product prices, details, inventory, category listings, order history, addresses, or profile info, ALWAYS call the corresponding database tools instead of guessing.
-2. Grounding: Never make up policies, prices, stock levels, or order details. Keep responses factual.
-3. Links: When mentioning products or providing links, always format them as markdown links: [Product Name](url). Only use URLs you received from tool results — never construct or guess a URL yourself.
-4. Catalog Validation: Before recommending any product, verify it exists by calling 'searchProducts' or 'getProductDetails'. If search fails or product is out of stock, DO NOT recommend it.
-5. NO ORDER PLACEMENT: You cannot place orders, edit addresses, or process payments. If customer wants to purchase, guide them to the product page.
-6. NO MANUAL ESCALATION: You cannot transfer to human agents. If they request one, direct them to the 'Talk to a human' button above chat input.`;
+1. **ALWAYS call tools first for ANY product/order/address/profile questions.** Never guess or make up data.
+   - **If user asks about/for products** (sofas, beds, furniture, prices, availability, suggestions, recommendations): ALWAYS call searchProducts with relevant query/category
+   - **Before recommending ANY product**, verify it exists by calling searchProducts or getProductDetails. NEVER recommend products you haven't verified.
+   - **If user asks about their orders**: ALWAYS call getOrderStatus or getOrderHistory
+   - **If user asks about their address**: ALWAYS call getDefaultAddress or getSavedAddresses
+   - **If user asks about their profile**: ALWAYS call getProfileInfo
+   - Only provide information from tool results. Never make up product names, prices, or availability.
+
+2. Grounding: Keep responses factual and based only on tool results. If a tool returns no results, say "I couldn't find any products matching your search" instead of making suggestions.
+
+3. Links: When mentioning products, format as markdown: [Product Name](url). Only use URLs from tool results — never construct URLs yourself.
+
+4. Catalog Validation: ALWAYS verify products exist before recommending them. If search fails or product is out of stock, DO NOT recommend it.
+
+5. NO ORDER PLACEMENT: You cannot place orders, edit addresses, or process payments. Guide users to the product page instead.
+
+6. NO MANUAL ESCALATION: If users request a human agent, direct them to the 'Talk to a human' button above chat input.
+
+7. If any tool call fails or returns an error, relay that error to the user instead of guessing.`;
 
       const apiMessages = [{ role: "system", content: systemPrompt }, ...messages];
 
