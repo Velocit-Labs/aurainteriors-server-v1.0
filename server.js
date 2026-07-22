@@ -65,6 +65,16 @@ verifyEmailConfig()
     console.error("[startup] ✗ Email service error:", err.message);
   });
 
+// Verify LLM provider configuration at startup
+const chatOrchestrator = require("./services/chatOrchestrator");
+chatOrchestrator.verifyLLMProviders();
+
+// Verify Qdrant connectivity at startup
+const retrievalService = require("./services/retrievalService");
+retrievalService.verifyQdrantConnection().catch(err => {
+  console.error("[startup] Qdrant verification error:", err.message);
+});
+
 const startTime = Date.now();
 
 connectDatabase();
@@ -231,27 +241,29 @@ const startServer = async () => {
     );
 
     // RSS Feed Scheduler - fetch every 6 hours
+    // Runs in background, non-blocking, using parallel fetches to minimize event loop impact
     const RSS_FETCH_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
     const rssFeedInterval = setInterval(async () => {
-      console.log("⏰ Running scheduled RSS feed fetch...");
+      console.log("[startup] ⏰ Scheduled RSS feed fetch starting...");
       try {
-        await fetchAllFeeds();
+        const result = await fetchAllFeeds();
         await updateFeaturedArticles(5);
-        console.log("✓ Scheduled RSS feed fetch completed");
+        console.log(`[startup] ✓ Scheduled RSS feed fetch completed in ${result.duration}ms`);
       } catch (error) {
-        console.error("✗ Scheduled RSS feed fetch failed:", error.message);
+        console.error("[startup] ✗ Scheduled RSS feed fetch failed:", error.message);
       }
     }, RSS_FETCH_INTERVAL);
 
     // Initial RSS feed fetch on startup (after 30 seconds to allow DB connection)
+    // Using setTimeout to keep startup non-blocking; feeds fetch in parallel to minimize delay
     setTimeout(async () => {
-      console.log("📰 Running initial RSS feed fetch...");
+      console.log("[startup] 📰 Initial RSS feed fetch starting (parallel mode)...");
       try {
-        await fetchAllFeeds();
+        const result = await fetchAllFeeds();
         await updateFeaturedArticles(5);
-        console.log("✓ Initial RSS feed fetch completed");
+        console.log(`[startup] ✓ Initial RSS feed fetch completed in ${result.duration}ms (${result.newArticles} new articles)`);
       } catch (error) {
-        console.error("✗ Initial RSS feed fetch failed:", error.message);
+        console.error("[startup] ✗ Initial RSS feed fetch failed:", error.message);
       }
     }, 30000);
 

@@ -2,7 +2,7 @@ const Parser = require("rss-parser");
 const Blog = require("../models/blog.model");
 
 const parser = new Parser({
-  timeout: 10000,
+  timeout: 3500, // Reduced from 10s to 3.5s per feed (was causing 30s+ delays)
   headers: {
     "User-Agent": "Mozilla/5.0 (compatible; AuraInteriors/1.0)",
   },
@@ -227,44 +227,57 @@ async function fetchFeed(feedConfig) {
 }
 
 /**
- * Fetch all RSS feeds and save to database
+ * Fetch all RSS feeds in PARALLEL and save to database
+ * Replaces sequential processing to prevent blocking the API request loop
  */
 async function fetchAllFeeds() {
-  console.log("Starting RSS feed fetch...");
+  const startTime = Date.now();
+  console.log("[RSS] 📰 Starting parallel RSS feed fetch for all feeds...");
+
+  // Fetch all feeds in parallel using Promise.allSettled
+  // This prevents one slow/failed feed from blocking others
+  const fetchPromises = RSS_FEEDS.map((feedConfig) => fetchFeed(feedConfig));
+  const results = await Promise.allSettled(fetchPromises);
 
   let totalNew = 0;
   let totalErrors = 0;
+  let failedFeeds = 0;
 
-  for (const feedConfig of RSS_FEEDS) {
-    try {
-      const articles = await fetchFeed(feedConfig);
+  // Process results and save articles
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    const feedConfig = RSS_FEEDS[i];
 
-      for (const article of articles) {
-        try {
-          await Blog.create(article);
-          totalNew++;
-          console.log(`Added: ${article.title.substring(0, 50)}...`);
-        } catch (err) {
-          if (err.code === 11000) {
-            // Duplicate - skip silently
-          } else {
-            console.error(`Error saving article: ${err.message}`);
-            totalErrors++;
-          }
+    if (result.status === "rejected") {
+      console.error(`[RSS] ✗ ${feedConfig.name}: Fetch failed - ${result.reason?.message || result.reason}`);
+      totalErrors++;
+      failedFeeds++;
+      continue;
+    }
+
+    const articles = result.value;
+    
+    for (const article of articles) {
+      try {
+        await Blog.create(article);
+        totalNew++;
+      } catch (err) {
+        if (err.code !== 11000) { // Skip duplicate key errors silently
+          console.error(`[RSS] Error saving article from ${feedConfig.name}: ${err.message}`);
+          totalErrors++;
         }
       }
-
-      // Small delay between feeds to be respectful
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    } catch (error) {
-      console.error(`Error processing feed ${feedConfig.name}:`, error.message);
-      totalErrors++;
     }
+
+    console.log(`[RSS] ✓ ${feedConfig.name}: ${articles.length} new articles`);
   }
 
-  console.log(`RSS feed fetch complete. New articles: ${totalNew}, Errors: ${totalErrors}`);
+  const elapsed = Date.now() - startTime;
+  console.log(
+    `[RSS] ✓ Parallel fetch complete in ${elapsed}ms: ${totalNew} new articles, ${failedFeeds} feeds failed, ${totalErrors} save errors`
+  );
 
-  return { newArticles: totalNew, errors: totalErrors };
+  return { newArticles: totalNew, errors: totalErrors, duration: elapsed };
 }
 
 /**
