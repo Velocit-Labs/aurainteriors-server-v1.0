@@ -1,8 +1,27 @@
 const express = require("express");
 const router = express.Router();
-const systemController = require("../controllers/system.controller");
 
-// Public route to get server info (used for AR QR codes in development)
-router.get("/info", systemController.getSystemInfo);
+// System health and monitoring endpoints
+router.get("/keep-alive-status", (req, res) => {
+  try {
+    if (!global.keepAliveService) {
+      return res.status(503).json({
+        success: false,
+        error: "Keep-Alive service not initialized",
+      });
+    }
+
+    const status = global.keepAliveService.getStatus();
+    res.status(200).json({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
 
 module.exports = router;

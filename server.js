@@ -25,6 +25,7 @@ const {
   updateFeaturedArticles,
 } = require("./services/rssFeedService");
 const { initializeDatabaseIfEmpty } = require("./services/databaseSeeder");
+const KeepAliveService = require("./services/keepAlive.service");
 
 const PORT = process.env.PORT || 3001;
 const NODE_ENV = process.env.NODE_ENV || "development";
@@ -204,6 +205,7 @@ app.use(globalErrorHandler);
 const httpServer = http.createServer(app);
 
 let notificationGateway;
+let keepAliveService;
 
 const startServer = async () => {
   try {
@@ -255,8 +257,13 @@ const startServer = async () => {
       }
     }, 30000);
 
+    // Initialize Keep-Alive Service (prevents idle shutdown on Render)
+    keepAliveService = new KeepAliveService();
+    keepAliveService.start();
+
     global.notificationGateway = notificationGateway;
     global.notificationEventEmitter = notificationEventEmitter;
+    global.keepAliveService = keepAliveService;
 
     httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(`✓ Server running on PORT ${PORT} [${NODE_ENV}]`);
@@ -273,6 +280,7 @@ const startServer = async () => {
       clearInterval(heartbeatInterval);
       clearInterval(cleanupInterval);
       clearInterval(rssFeedInterval);
+      keepAliveService.stop();
       await notificationGateway.close();
       await closeQueues();
       process.exit(0);
